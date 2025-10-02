@@ -25,25 +25,29 @@ from livekit.agents import metrics
 from livekit.plugins import openai, silero
 from livekit.agents import BackgroundAudioPlayer, AudioConfig, BuiltinAudioClip
 from livekit.agents.llm import ChatMessage
-from context import CONTEXT
+
+# from context import CONTEXT
 from datetime import datetime
 from livekit import rtc
 import re
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, field_validator
 from typing import Optional
 import re
+from openai import OpenAI
 
-logger = logging.getLogger("mayfairtech-voice-agent")
+logger = logging.getLogger("aisystems-voice-agent")
 load_dotenv(dotenv_path=".env")
+
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 if not hasattr(RunContext, "session_data"):
     RunContext.session_data = {}
 
 CONTACT_INFO = {
-    "address": "123 Innovation Avenue, Karachi, Pakistan",
-    "phone": "+92 21 3567 8910",
-    "email": "support@mayfairtech.ai",
-    "office_hours": "Mon–Fri: 9:00 AM – 6:00 PM, Sat: 10:00 AM – 2:00 PM, Sun: Closed",
+    "address": "D-38, Block 5 Clifton, Karachi, Pakistan",
+    "phone": "+92 326 367057",
+    "email": "info@theaisystems.com",
+    "office_hours": "Mon–Fri: 9:00 AM – 6:00 PM, Sat, Sun: Closed",
 }
 
 
@@ -62,6 +66,8 @@ LOG_FILE = "session_summary.json"
 
 
 # ====== Pydantic models for the Agent ======
+from pydantic import BaseModel, EmailStr, field_validator
+import re
 
 class ContactRequest(BaseModel):
     name: str
@@ -83,7 +89,6 @@ class ContactRequest(BaseModel):
     def validate_phone(cls, v: str | None) -> str | None:
         if v is None:
             return v
-        # Basic international phone regex
         pattern = re.compile(r"^\+?[0-9\s\-]{7,15}$")
         if not pattern.match(v):
             raise ValueError("Invalid phone number format.")
@@ -137,18 +142,20 @@ def send_email(to_email: str, subject: str, body: str) -> bool:
         logger.error(f"Failed to send email to {to_email}: {e}")
         return False
 
-async def rotate_ambience(background_audio, interval=180):
-    """Randomly rotate ambience every `interval` seconds."""
-    while True:
-        new_file = random.choice(AMBIENT_AUDIO_FILES)
-        print(f"🔊 Switching ambience to {new_file}")
-        await background_audio.set_ambient(AudioConfig(new_file, volume=0.6))
-        await asyncio.sleep(interval)
+
+# async def rotate_ambience(background_audio, interval=180):
+#     """Randomly rotate ambience every `interval` seconds."""
+#     while True:
+#         new_file = random.choice(AMBIENT_AUDIO_FILES)
+#         print(f"🔊 Switching ambience to {new_file}")
+#         await background_audio.set_ambient(AudioConfig(new_file, volume=0.6))
+#         await asyncio.sleep(interval)
+
 
 # ----------------------------------- AGENT CLASS -----------------------------------
 
 
-class MayfairTechAgent(Agent):
+class AISystemsAgent(Agent):
     def __init__(self, voice: str = "cedar") -> None:
         stt = openai.STT(
             model="gpt-4o-transcribe",
@@ -160,7 +167,8 @@ class MayfairTechAgent(Agent):
         silero_vad = silero.VAD.load()
 
         super().__init__(
-            instructions=(f""" {CONTEXT}"""),
+            # instructions=(f""" {CONTEXT}"""),
+            instructions=f"You are an agent that responds to queries related to the company The AI Systems",
             stt=stt,
             llm=llm_inst,
             tts=tts,
@@ -173,14 +181,14 @@ class MayfairTechAgent(Agent):
     async def get_company_info(self, query: str, context: RunContext) -> str:
         """
         Retrieves only the relevant company information section from about_company.md
-        by letting the LLM select the best-matching Question, then returning the full Q/A.
+        by letting the LLM select the best-matching heading, then returning the full section.
 
         Args:
             query (str): The user's query related to the company.
             context (RunContext): The current run context for the agent.
 
         Returns:
-            str: The most relevant Q/A pair from the company information markdown file.
+            str: The most relevant section (heading + content) from the company information markdown file.
         """
 
         fileloc = Path("info/")
@@ -189,27 +197,28 @@ class MayfairTechAgent(Agent):
         with open(fileloc / filenam, "r", encoding="utf-8") as f:
             markdown_text = f.read()
 
-        # --- Split into Q/A pairs ---
-        sections = re.split(r"(## Q\d+:.*)", markdown_text)
-        qa_pairs = {}
-        for i in range(1, len(sections), 2):
-            question = sections[i].strip()
-            answer = sections[i + 1].strip() if i + 1 < len(sections) else ""
-            qa_pairs[question] = answer
+        # --- Split into sections by headings starting with ##
+        sections = re.split(r"(^## .*)", markdown_text, flags=re.MULTILINE)
+        section_map = {}
 
-        # --- Just give questions to the LLM ---
-        questions_only = "\n".join(list(qa_pairs.keys()))
-        logger.info(f"Question list: {questions_only}")
+        for i in range(1, len(sections), 2):
+            heading = sections[i].strip()
+            content = sections[i + 1].strip() if i + 1 < len(sections) else ""
+            section_map[heading] = content
+
+        # --- Just give headings to the LLM ---
+        headings_only = "\n".join(list(section_map.keys()))
+        logger.info(f"Headings list: {headings_only}")
 
         llm_prompt = f"""
         A user asked: "{query}"
 
-        Here are the possible questions from the company info:
+        Here are the possible sections from the company info:
 
-        {questions_only}
+        {headings_only}
 
-        Please return ONLY the most relevant question from the list above. 
-        Do not return the answer, just the question as written.
+        Please return ONLY the most relevant heading from the list above. 
+        Do not return the content, just the heading exactly as written.
         """
 
         response = client.chat.completions.create(
@@ -221,40 +230,108 @@ class MayfairTechAgent(Agent):
             max_tokens=100,
         )
 
-        selected_question = response.choices[0].message.content.strip()
+        selected_heading = response.choices[0].message.content.strip()
 
-        # --- Get the matching answer ---
-        answer = qa_pairs.get(
-            selected_question, "Sorry, I couldn’t find relevant company info."
+        # --- Get the matching content ---
+        content = section_map.get(
+            selected_heading, "Sorry, I couldn’t find relevant company info."
         )
 
-        result = f"{selected_question}\n{answer}"
-        logger.info(f"Selected QA Pair: {result}")
+        result = f"{selected_heading}\n{content}"
+        logger.info(f"Selected Section: {result}")
 
         return result
 
-    # ------------------ FLOW 2: Leadership Team ------------------
+    # ------------------ FLOW 2: Get Company Solutions ------------------
     @function_tool()
-    async def get_leadership_team(self, context: RunContext) -> str:
+    async def get_company_solution(self, query: str, context: RunContext) -> str:
         """
-        Retrieves information about the leadership team from a markdown file.
-
-        This function reads the contents of 'LeaderShipTeam.md' located in the 'Knowledge repo' directory and returns it as a string.
-
-        Args:
-            context (RunContext): The current run context for the agent.
-
-        Returns:
-            str: The contents of the leadership team markdown file.
+        Retrieves company solution information from solutions.md.
+        - If the query is general (about all solutions), return the full file.
+        - If the query is specific, select the most relevant solution section.
         """
-        logger.info("-------------------------------------")
-        logger.info("Tool calling (Get Leader Info):")
-        logger.info("-------------------------------------")
+
         fileloc = Path("info/")
-        filenam = "leadership_team.md"
+        filenam = "solutions.md"
+
         with open(fileloc / filenam, "r", encoding="utf-8") as f:
             markdown_text = f.read()
-        return markdown_text
+
+        # --- Split into sections by headings starting with ##
+        sections = re.split(r"(^## .*)", markdown_text, flags=re.MULTILINE)
+        section_map = {}
+
+        for i in range(1, len(sections), 2):
+            heading = sections[i].strip()
+            content = sections[i + 1].strip() if i + 1 < len(sections) else ""
+            section_map[heading] = content
+
+        headings_only = "\n".join(list(section_map.keys()))
+
+        # --- Step 1: Ask LLM if query is general or specific ---
+        classification_prompt = f"""
+        A user asked: "{query}"
+
+        The company has a list of solutions with these headings:
+        {headings_only}
+
+        Your task:
+        - If the query is asking generally about all solutions, respond with: GENERAL
+        - If the query is asking about one specific solution, respond with: SPECIFIC
+        Do not include anything else in your answer.
+        """
+
+        classification = (
+            client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a classification system."},
+                    {"role": "user", "content": classification_prompt},
+                ],
+                max_tokens=10,
+            )
+            .choices[0]
+            .message.content.strip()
+        )
+
+        logger.info(f"Solution query classified as: {classification}")
+
+        # --- Step 2: If GENERAL → return entire document ---
+        if classification.upper() == "GENERAL":
+            return markdown_text
+
+        # --- Step 3: If SPECIFIC → pick the most relevant heading ---
+        llm_prompt = f"""
+        A user asked: "{query}"
+
+        Here are the possible solution categories offered by the company:
+
+        {headings_only}
+
+        Please return ONLY the most relevant heading from the list above. 
+        Do not return the content, just the heading exactly as written.
+        """
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a selector system."},
+                {"role": "user", "content": llm_prompt},
+            ],
+            max_tokens=100,
+        )
+
+        selected_heading = response.choices[0].message.content.strip()
+
+        # --- Get the matching content ---
+        content = section_map.get(
+            selected_heading, "Sorry, I couldn’t find relevant solution info."
+        )
+
+        result = f"{selected_heading}\n{content}"
+        logger.info(f"Selected Solution Section: {result}")
+
+        return result
 
     # ------------------ FLOW 3: Customer Support ------------------
     @function_tool()
@@ -277,7 +354,9 @@ class MayfairTechAgent(Agent):
 
     # ------------------ FLOW 4: Contact Company ------------------
     @function_tool()
-    async def contact_company(self, context: RunContext, contact: ContactRequest) -> dict:
+    async def contact_company(
+        self, context: RunContext, contact: ContactRequest
+    ) -> dict:
         """
         Situation:
             Called when the user provides details to contact the company.
@@ -292,7 +371,9 @@ class MayfairTechAgent(Agent):
                 "requires_confirmation": True
             }
         """
-        logger.info(f"Creating contact request preview for {contact.name} <{contact.email}>")
+        logger.info(
+            f"Creating contact request preview for {contact.name} <{contact.email}>"
+        )
 
         contact_id = f"CTC{random.randint(10000, 99999)}"
 
@@ -304,7 +385,7 @@ class MayfairTechAgent(Agent):
             f"Subject: {contact.subject}",
             f"Message: {contact.message}",
             "",
-            "Please confirm to finalize submitting this contact request."
+            "Please confirm to finalize submitting this contact request.",
         ]
         summary = "\n".join(summary_lines)
 
@@ -324,53 +405,121 @@ class MayfairTechAgent(Agent):
             "requires_confirmation": True,
         }
 
-    # ------------------ FLOW 5: Confirm Contact Request Email ------------------
+    # ------------------ FLOW 5: Confirm or Cancel Contact Request ------------------
     @function_tool()
-    async def confirm_contact_request(self, context: RunContext) -> dict:
-        """Confirm and finalize the pending contact request, then send emails."""
+    async def confirm_contact_request(self, action: str, context: RunContext) -> dict:
+        """
+        Confirm or cancel the pending contact request, then handle emails if confirmed.
+
+        Args:
+            action (str): Either "confirm" or "cancel".
+            context (RunContext): The current run context for the agent.
+
+        Returns:
+            dict: Result of the operation with status and message.
+        """
         pending = context.session_data.get("pending_contact")
         if not pending:
-            return {"error": "No pending contact request to confirm."}
+            return {"error": "No pending contact request to process."}
 
-        pending["status"] = "confirmed"
-        context.session_data["last_contact"] = pending
-        context.session_data.pop("pending_contact", None)
+        if action.lower() == "confirm":
+            pending["status"] = "confirmed"
+            context.session_data["last_contact"] = pending
+            context.session_data.pop("pending_contact", None)
 
-        # --- Email Sending ---
-        request = pending["request"]
-        user_email = request["email"]
-        company_email = os.getenv("COMPANY_EMAIL", "company@example.com")
+            # --- Email Sending ---
+            request = pending["request"]
+            user_email = request["email"]
+            company_email = os.getenv("COMPANY_EMAIL", "company@example.com")
 
-        # Email to user
-        user_subject = "✅ Your Contact Request Has Been Received"
-        user_body = (
-            f"Hi {request['name']},\n\n"
-            f"Thank you for contacting us regarding '{request['subject']}'. "
-            "Our team will review your message and get back to you shortly.\n\n"
-            "Best regards,\nAI Solutions Company"
-        )
-        send_email(user_email, user_subject, user_body)
+            # Email to user
+            user_subject = "✅ Your Contact Request Has Been Received"
+            user_body = (
+                f"Hi {request['name']},\n\n"
+                f"Thank you for contacting us regarding '{request['subject']}'. "
+                "Our team will review your message and get back to you shortly.\n\n"
+                "Best regards,\nAI Solutions Company"
+            )
+            send_email(user_email, user_subject, user_body)
 
-        # Email to company
-        company_subject = f"📩 New Contact Request from {request['name']}"
-        company_body = (
-            f"New contact request submitted:\n\n"
-            f"Name: {request['name']}\n"
-            f"Email: {request['email']}\n"
-            f"Phone: {request['phone']}\n"
-            f"Subject: {request['subject']}\n"
-            f"Message:\n{request['message']}\n\n"
-            f"Request ID: {pending['id']}"
-        )
-        send_email(company_email, company_subject, company_body)
+            # Email to company
+            company_subject = f"📩 New Contact Request from {request['name']}"
+            company_body = (
+                f"New contact request submitted:\n\n"
+                f"Name: {request['name']}\n"
+                f"Email: {request['email']}\n"
+                f"Phone: {request['phone']}\n"
+                f"Subject: {request['subject']}\n"
+                f"Message:\n{request['message']}\n\n"
+                f"Request ID: {pending['id']}"
+            )
+            send_email(company_email, company_subject, company_body)
 
-        logger.info(f"Contact request confirmed and emails sent: {pending['id']}")
+            logger.info(f"Contact request confirmed and emails sent: {pending['id']}")
 
-        return {
-            "contact_id": pending["id"],
-            "status": "confirmed",
-            "message": "Your contact request has been submitted and a confirmation email has been sent."
-        }
+            return {
+                "contact_id": pending["id"],
+                "status": "confirmed",
+                "message": "Your contact request has been submitted and a confirmation email has been sent.",
+            }
+
+        elif action.lower() == "cancel":
+            context.session_data.pop("pending_contact", None)
+            logger.info("Pending contact request cancelled by user.")
+            return {
+                "status": "cancelled",
+                "message": "Your contact request has been cancelled.",
+            }
+
+        else:
+            return {"error": "Invalid action. Use 'confirm' or 'cancel'."}
+
+    # @function_tool()
+    # async def confirm_contact_request(self, context: RunContext) -> dict:
+    #     """Confirm and finalize the pending contact request, then send emails."""
+    #     pending = context.session_data.get("pending_contact")
+    #     if not pending:
+    #         return {"error": "No pending contact request to confirm."}
+
+    #     pending["status"] = "confirmed"
+    #     context.session_data["last_contact"] = pending
+    #     context.session_data.pop("pending_contact", None)
+
+    #     # --- Email Sending ---
+    #     request = pending["request"]
+    #     user_email = request["email"]
+    #     company_email = os.getenv("COMPANY_EMAIL", "company@example.com")
+
+    #     # Email to user
+    #     user_subject = "✅ Your Contact Request Has Been Received"
+    #     user_body = (
+    #         f"Hi {request['name']},\n\n"
+    #         f"Thank you for contacting us regarding '{request['subject']}'. "
+    #         "Our team will review your message and get back to you shortly.\n\n"
+    #         "Best regards,\nAI Solutions Company"
+    #     )
+    #     send_email(user_email, user_subject, user_body)
+
+    #     # Email to company
+    #     company_subject = f"📩 New Contact Request from {request['name']}"
+    #     company_body = (
+    #         f"New contact request submitted:\n\n"
+    #         f"Name: {request['name']}\n"
+    #         f"Email: {request['email']}\n"
+    #         f"Phone: {request['phone']}\n"
+    #         f"Subject: {request['subject']}\n"
+    #         f"Message:\n{request['message']}\n\n"
+    #         f"Request ID: {pending['id']}"
+    #     )
+    #     send_email(company_email, company_subject, company_body)
+
+    #     logger.info(f"Contact request confirmed and emails sent: {pending['id']}")
+
+    #     return {
+    #         "contact_id": pending["id"],
+    #         "status": "confirmed",
+    #         "message": "Your contact request has been submitted and a confirmation email has been sent.",
+    #     }
 
     # ------------------ FLOW 6: Products ------------------
     @function_tool()
@@ -397,31 +546,6 @@ class MayfairTechAgent(Agent):
         return markdown_text
 
 
-    # ------------------ FLOW 7: Services ------------------
-    @function_tool()
-    async def get_services(self, context: RunContext) -> str:
-        """
-        Retrieves information about the company's services from a markdown file.
-
-        This function reads the contents of 'services.md' located in the 'info' directory
-        and returns it as a string.
-
-        Args:
-            context (RunContext): The current run context for the agent.
-
-        Returns:
-            str: The contents of the services markdown file.
-        """
-        logger.info("-------------------------------------")
-        logger.info("Tool calling (Get Services):")
-        logger.info("-------------------------------------")
-        fileloc = Path("info/")
-        filenam = "services.md"
-        with open(fileloc / filenam, "r", encoding="utf-8") as f:
-            markdown_text = f.read()
-        return markdown_text
-
-
 # ------------------ AGENT LIFECYCLE ------------------
 def prewarm(proc: JobProcess):
     proc.userdata["vad"] = silero.VAD.load()
@@ -441,7 +565,7 @@ async def entrypoint(ctx: JobContext):
         max_endpointing_delay=5.0,
     )
 
-    agent = MayfairTechAgent()
+    agent = AISystemsAgent()
     usage_collector = metrics.UsageCollector()
 
     # Store conversation in memory
@@ -540,21 +664,21 @@ async def entrypoint(ctx: JobContext):
     # )
     # await background_audio.start(room=ctx.room, agent_session=session)
 
-    background_audio = BackgroundAudioPlayer(
-        ambient_sound=AudioConfig(random.choice(AMBIENT_AUDIO_FILES), volume=0.6),
-        thinking_sound=[
-            AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING, volume=0.7),
-            AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING2, volume=0.6),
-        ],
-    )
+    # background_audio = BackgroundAudioPlayer(
+    #     ambient_sound=AudioConfig(random.choice(AMBIENT_AUDIO_FILES), volume=0.6),
+    #     thinking_sound=[
+    #         AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING, volume=0.7),
+    #         AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING2, volume=0.6),
+    #     ],
+    # )
 
-    await background_audio.start(room=ctx.room, agent_session=session)
+    # await background_audio.start(room=ctx.room, agent_session=session)
 
     # Start background rotation loop
-    asyncio.create_task(rotate_ambience(background_audio, interval=180))
+    # asyncio.create_task(rotate_ambience(background_audio, interval=180))
 
     # --- Greeting
-    await session.say("Hi, I’m your MayfairTech Assistant! How can I help you today?")
+    await session.say("Hi, I’m your AI Systems Assistant! How can I help you today?")
 
 
 if __name__ == "__main__":
