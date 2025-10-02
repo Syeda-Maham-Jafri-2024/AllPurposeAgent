@@ -438,7 +438,7 @@ class AISystemsAgent(Agent):
                 f"Hi {request['name']},\n\n"
                 f"Thank you for contacting us regarding '{request['subject']}'. "
                 "Our team will review your message and get back to you shortly.\n\n"
-                "Best regards,\nAI Solutions Company"
+                "Best regards,\nThe AI Systems"
             )
             send_email(user_email, user_subject, user_body)
 
@@ -523,27 +523,96 @@ class AISystemsAgent(Agent):
 
     # ------------------ FLOW 6: Products ------------------
     @function_tool()
-    async def get_products(self, context: RunContext) -> str:
+    async def get_company_product(self, query: str, context: RunContext) -> str:
         """
-        Retrieves information about the company's products from a markdown file.
-
-        This function reads the contents of 'products.md' located in the 'info' directory
-        and returns it as a string.
-
-        Args:
-            context (RunContext): The current run context for the agent.
-
-        Returns:
-            str: The contents of the products markdown file.
+        Retrieves company product information from products.md.
+        - If the query is general (about all products), return the full file.
+        - If the query is specific, select the most relevant product section.
         """
-        logger.info("-------------------------------------")
-        logger.info("Tool calling (Get Products):")
-        logger.info("-------------------------------------")
+
         fileloc = Path("info/")
         filenam = "products.md"
+
         with open(fileloc / filenam, "r", encoding="utf-8") as f:
             markdown_text = f.read()
-        return markdown_text
+
+        # --- Split into sections by headings starting with ##
+        sections = re.split(r"(^## .*)", markdown_text, flags=re.MULTILINE)
+        section_map = {}
+
+        for i in range(1, len(sections), 2):
+            heading = sections[i].strip()
+            content = sections[i + 1].strip() if i + 1 < len(sections) else ""
+            section_map[heading] = content
+
+        headings_only = "\n".join(list(section_map.keys()))
+
+        # --- Step 1: Ask LLM if query is general or specific ---
+        classification_prompt = f"""
+        A user asked: "{query}"
+
+        The company has a list of products with these headings:
+        {headings_only}
+
+        Your task:
+        - If the query is asking generally about all products, respond with: GENERAL
+        - If the query is asking about one specific product, respond with: SPECIFIC
+        Keep it concise while responding.
+        """
+
+        classification = (
+            client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a classification system."},
+                    {"role": "user", "content": classification_prompt},
+                ],
+                max_tokens=10,
+            )
+            .choices[0]
+            .message.content.strip()
+        )
+
+        logger.info(f"Product query classified as: {classification}")
+
+        # --- Step 2: If GENERAL → return entire document ---
+        if classification.upper() == "GENERAL":
+            return markdown_text
+
+        # --- Step 3: If SPECIFIC → pick the most relevant heading ---
+        llm_prompt = f"""
+        A user asked: "{query}"
+
+        Here are the possible product categories offered by the company:
+
+        {headings_only}
+
+        Please return ONLY the most relevant heading from the list above. 
+        Do not return the content, just the heading exactly as written.
+        Keep it concise while responding.
+        """
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a selector system."},
+                {"role": "user", "content": llm_prompt},
+            ],
+            max_tokens=100,
+        )
+
+        selected_heading = response.choices[0].message.content.strip()
+
+        # --- Get the matching content ---
+        content = section_map.get(
+            selected_heading, "Sorry, I couldn’t find relevant product info."
+        )
+
+        result = f"{selected_heading}\n{content}"
+        logger.info(f"Selected Product Section: {result}")
+
+        return result
+
 
 
 # ------------------ AGENT LIFECYCLE ------------------

@@ -374,7 +374,7 @@ import logging
 from datetime import date as dt_date
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from pydantic import BaseModel, EmailStr, validator
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
 from livekit.agents import (
     Agent,
@@ -491,13 +491,13 @@ class AppointmentRequest(BaseModel):
     doctor_name: str
     date: dt_date
 
-    @validator("doctor_name")
+    @field_validator("doctor_name")
     def validate_doctor_exists(cls, value):
         if value not in DOCTORS:
             raise ValueError(f"Doctor '{value}' is not available at this hospital.")
         return value
 
-    @validator("date")
+    @field_validator("date")
     def validate_future_date(cls, value):
         today = dt_date.today()
         if value < today:
@@ -510,7 +510,7 @@ class RescheduleRequest(BaseModel):
     appointment_id: str
     new_date: dt_date
 
-    @validator("appointment_id")
+    @field_validator("appointment_id")
     def validate_id_format(cls, v):
         if not v.startswith("APT"):
             raise ValueError("Invalid appointment ID format.")

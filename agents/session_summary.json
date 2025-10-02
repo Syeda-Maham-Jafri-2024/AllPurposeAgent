@@ -1,0 +1,1 @@
+{"session_id": "2025-10-02_07-57-54", "metrics": {"llm_prompt_tokens": 4005, "llm_prompt_cached_tokens": 0, "llm_input_audio_tokens": 0, "llm_completion_tokens": 261, "llm_output_audio_tokens": 0, "tts_characters_count": 922, "tts_audio_duration": 54.032, "stt_audio_duration": 0.0}, "duration_minutes": 3.0850193666666663, "conversation": []}
