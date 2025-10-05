@@ -388,17 +388,60 @@ from livekit.agents import (
     AutoSubscribe,
     RoomInputOptions,
 )
+from livekit import rtc
 from livekit.agents import metrics
 from livekit.plugins import openai, silero
 from livekit.agents import BackgroundAudioPlayer, AudioConfig, BuiltinAudioClip
+from datetime import datetime
+import re
 
 logger = logging.getLogger("hospital-voice-agent")
-logging.basicConfig(level=logging.INFO)
+# logging.basicConfig(level=logging.INFO)
 
 from dotenv import load_dotenv
 load_dotenv()
 
 # ------------------ SAMPLE DATA ------------------
+FILLER_AUDIO = [
+        "audio/filler_1.wav",
+        "audio/filler_2.wav",
+        "audio/filler_3.wav",
+        "audio/filler_4.wav",
+        "audio/filler_5.wav",
+        "audio/filler_6.wav",
+        "audio/filler_7.wav",
+        "audio/filler_8.wav",
+        "audio/filler_9.wav",
+        "audio/filler_10.wav",
+        "audio/filler_11.wav",
+        "audio/filler_12.wav",
+        "audio/filler_13.wav",
+        "audio/filler_14.wav",
+        "audio/filler_15.wav",
+        "audio/filler_16.wav",
+        "audio/filler_17.wav",
+        "audio/filler_18.wav",
+        "audio/filler_19.wav",
+        "audio/filler_20.wav",
+        "audio/filler_21.wav",
+        "audio/filler_22.wav",
+        "audio/filler_23.wav",
+        "audio/filler_24.wav",
+        "audio/filler_25.wav",
+        "audio/filler_26.wav",
+        "audio/filler_27.wav",
+        "audio/filler_28.wav",
+        "audio/filler_29.wav",
+        "audio/filler_30.wav",
+        "audio/filler_31.wav",
+        "audio/filler_32.wav",
+    ]
+
+CLOSING_RE = re.compile(
+    r"^\s*(bye|goodbye|see you|see ya|later|thanks(?:\s+all)?|thank you|that's it|that is all|no that's all|talk soon|i'm done|done)[\.\!\?]?\s*$",
+    flags=re.IGNORECASE | re.UNICODE,
+)
+
 HOSPITAL_INFO = {
     "name": "CityCare Hospital",
     "address": "45 Medical Boulevard, Karachi, Pakistan",
@@ -518,7 +561,7 @@ class RescheduleRequest(BaseModel):
             raise ValueError(f"Appointment ID '{v}' not found.")
         return v
 
-    @validator("new_date")
+    @field_validator("new_date")
     def validate_future_date(cls, v):
         if v < dt_date.today():
             raise ValueError("New date cannot be in the past.")
@@ -529,7 +572,7 @@ class CancelRequest(BaseModel):
     """Model for cancelling an appointment"""
     appointment_id: str
 
-    @validator("appointment_id")
+    @field_validator("appointment_id")
     def validate_id_format(cls, v):
         if not v.startswith("APT"):
             raise ValueError("Invalid appointment ID format.")
@@ -686,10 +729,182 @@ class HospitalAgent(Agent):
         return msg
 
 
-if __name__ == "__main__":
-    success = send_email_to_patient(
-        "syeda.maham.jafri.2024@gmail.com",
-        "Test Appointment Email",
-        "This is a test from CityCare Hospital Agent."
+# ------------------ AGENT LIFECYCLE ------------------
+def prewarm(proc: JobProcess):
+    proc.userdata["vad"] = silero.VAD.load()
+
+    # Add this at the top of entrypoint
+
+async def entrypoint(ctx: JobContext):
+    filler_task = None  
+    logger.info(f"connecting to room {ctx.room.name}")
+    await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
+
+    # Wait for the first participant
+    participant = await ctx.wait_for_participant()
+    logger.info(f"starting voice assistant for participant {participant.identity}")
+
+    session = AgentSession(
+        vad=ctx.proc.userdata["vad"],
+        min_endpointing_delay=0.9,
+        max_endpointing_delay=5.0,
     )
-    print("Email sent:", success)
+
+    agent = HospitalAgent()
+    usage_collector = metrics.UsageCollector()
+
+    # Store conversation in memory
+    conversation_log = []
+    
+    # ----------------------------
+    # Metrics collection
+    # ----------------------------
+    @session.on("metrics_collected")
+    def on_agent_metrics(agent_metrics: metrics.AgentMetrics):
+        usage_collector.collect(agent_metrics)
+
+    @agent.llm.on("metrics_collected")
+    def on_llm_metrics(llm_metrics: metrics.LLMMetrics):
+        usage_collector.collect(llm_metrics)
+
+    @agent.stt.on("metrics_collected")
+    def on_stt_metrics(stt_metrics: metrics.STTMetrics):
+        usage_collector.collect(stt_metrics)
+
+    @agent.tts.on("metrics_collected")
+    def on_tts_metrics(tts_metrics: metrics.TTSMetrics):
+        usage_collector.collect(tts_metrics)
+
+    # ----------------------------
+    # Conversation capture
+    # --------------------------
+
+    @session.on("user_message")
+    def on_user_message(msg):
+        nonlocal filler_task  # so we can modify the outer variable
+        if msg.text.strip():
+            conversation_log.append(
+                {"role": "user", "text": msg.text, "timestamp": datetime.utcnow().isoformat()}
+            )
+
+            text = msg.text.lower().strip().replace("’", "'")
+            if not hasattr(session, "ending"):
+                session.ending = False
+
+            closing_keywords = [
+                "bye", "goodbye", "see you", "later", "thanks", "thank you",
+                "that's it", "no that's all", "talk soon", "done"
+            ]
+
+            # 🔑 If closing phrase detected → mark ending + cancel fillers
+            if any(kw in text for kw in closing_keywords):
+                session.ending = True
+                if filler_task and not filler_task.done():
+                    filler_task.cancel()
+                    asyncio.create_task(background_audio.clear_thinking())
+                logger.info(f"Closing detected, skipping filler: {msg.text}")
+                return
+
+            if session.ending:
+                logger.info(f"Session is ending, suppressing filler for: {msg.text}")
+                return
+
+            # Otherwise schedule filler as usual
+            async def delayed_filler():
+                await asyncio.sleep(1.0)
+                filler = get_random_filler()
+                logger.info(f"Playing filler after: {msg.text} → {filler}")
+                await background_audio.set_thinking([AudioConfig(filler, volume=0.9)])
+
+            filler_task = asyncio.create_task(delayed_filler())
+
+
+    # @session.on("user_message")
+    # def on_user_message(msg):
+    #     if msg.text.strip():
+    #         conversation_log.append(
+    #             {"role": "user", "text": msg.text, "timestamp": datetime.utcnow().isoformat()}
+    #         )
+
+    #         text = msg.text.lower()
+
+    #         # 🔑 Skip filler scheduling entirely for closing-type phrases
+    #         if any(word in text for word in ["bye", "goodbye", "see you", "later", "thanks"]):
+    #             logger.info("Skipping filler for closing phrase.")
+    #             returnj
+
+    #         async def delayed_filler():
+    #             await asyncio.sleep(1.0)  # pause after user finishes
+    #             filler = get_random_filler()
+    #             await background_audio.set_thinking([AudioConfig(filler, volume=0.9)])
+
+    #         asyncio.create_task(delayed_filler())
+
+
+    @session.on("assistant_message")
+    def on_assistant_message(msg):
+        if msg.text.strip():
+            conversation_log.append(
+                {"role": "assistant", "text": msg.text, "timestamp": datetime.utcnow().isoformat()}
+            )
+        # Always stop filler when assistant responds
+        asyncio.create_task(background_audio.clear_thinking())
+
+    # ----------------------------
+    # Call lifecycle tracking
+    # ----------------------------
+    @ctx.room.on("participant_connected")
+    def on_connected(remote: rtc.RemoteParticipant):
+        ctx.call_start = datetime.utcnow()
+        logger.info("-------- Call Started -------")
+
+    @ctx.room.on("participant_disconnected")
+    def on_finished(remote: rtc.RemoteParticipant):
+        call_start = getattr(ctx, "call_start", None)
+        call_end = datetime.utcnow()
+
+        duration_minutes = (call_end - call_start).total_seconds() / 60.0 if call_start else 0.0
+        summary = usage_collector.get_summary()
+        summary_dict = summary.__dict__ if hasattr(summary, "__dict__") else summary
+
+        record = {
+            "session_id": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
+            "metrics": summary_dict,
+            "duration_minutes": duration_minutes,
+            "conversation": conversation_log,
+        }
+
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            json.dump(record, f, ensure_ascii=False)
+            f.write("\n")
+
+        logger.info(f"✅ Record saved to JSON: {record['session_id']}")
+
+    # --- Start the session
+    ctx.call_start = datetime.utcnow()
+    await session.start(
+        room=ctx.room,
+        agent=agent,
+        room_input_options=RoomInputOptions(),
+    )
+
+    # --- Background ambience + fillers
+    global background_audio
+    background_audio = BackgroundAudioPlayer(
+        ambient_sound=AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.6),
+        thinking_sound=[AudioConfig(f, volume=0.9) for f in FILLER_AUDIO],
+    )
+    await background_audio.start(room=ctx.room, agent_session=session)
+  
+
+    # --- Greeting
+    await session.say("Hi, I’m your Healthcare Assistant! How can I help you today?")
+
+if __name__ == "__main__":
+    cli.run_app(
+        WorkerOptions(
+            entrypoint_fnc=entrypoint,
+            prewarm_fnc=prewarm,
+        ),
+    )
+
