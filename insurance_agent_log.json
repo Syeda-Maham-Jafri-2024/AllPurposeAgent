@@ -1,0 +1,2 @@
+{"conversation": [], "metrics": {"llm_prompt_tokens": 0, "llm_prompt_cached_tokens": 0, "llm_input_audio_tokens": 0, "llm_completion_tokens": 0, "llm_output_audio_tokens": 0, "tts_characters_count": 0, "tts_audio_duration": 0.0, "stt_audio_duration": 0.0}}
+{"conversation": [], "metrics": {"llm_prompt_tokens": 0, "llm_prompt_cached_tokens": 0, "llm_input_audio_tokens": 0, "llm_completion_tokens": 0, "llm_output_audio_tokens": 0, "tts_characters_count": 0, "tts_audio_duration": 0.0, "stt_audio_duration": 0.0}}

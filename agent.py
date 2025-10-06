@@ -1,137 +1,183 @@
+# dispatcher_agent.py
+
+import os
 import logging
+import random
+import json
+from datetime import datetime
 
 from dotenv import load_dotenv
+
 from livekit.agents import (
-    NOT_GIVEN,
     Agent,
-    AgentFalseInterruptionEvent,
     AgentSession,
+    RunContext,
     JobContext,
     JobProcess,
-    MetricsCollectedEvent,
-    RoomInputOptions,
-    RunContext,
     WorkerOptions,
     cli,
-    metrics,
+    AutoSubscribe,
+    RoomInputOptions,
+    function_tool,
 )
-from livekit.agents.llm import function_tool
-from livekit.plugins import cartesia, deepgram, noise_cancellation, openai, silero
-from livekit.plugins.turn_detector.multilingual import MultilingualModel
+from livekit.agents import metrics
+from livekit.plugins import openai, silero
+from livekit import rtc
 
-logger = logging.getLogger("agent")
+from healthcare_agent import HospitalAgent
+from airline_agent import AirlineAgent
+from restaurant_agent import RestaurantAgent
+from insurance_agent import InsuranceAgent
+from aisystems_agent import AISystemsAgent
+from context import ALL_PURPOSE_CONTEXT
 
-load_dotenv(".env.local")
+logger = logging.getLogger("dispatcher-agent")
+load_dotenv(dotenv_path=".env")
+
+# ------------------ FILLER AUDIO ------------------
+FILLER_AUDIO = [
+    f"audio/filler_{i}.wav" for i in range(1, 33)
+]
 
 
-class Assistant(Agent):
-    def __init__(self) -> None:
+def get_random_filler():
+    return random.choice(FILLER_AUDIO) if FILLER_AUDIO else None
+
+
+# ------------------ DISPATCHER AGENT ------------------
+class DispatcherAgent(Agent):
+    def __init__(self, voice: str = "alloy") -> None:
+        stt = openai.STT(model="gpt-4o-transcribe", language="en")
+        llm_inst = openai.LLM(model="gpt-4o")
+        tts = openai.TTS(model="gpt-4o-mini-tts", voice=voice)
+        silero_vad = silero.VAD.load()
+
         super().__init__(
-            instructions="""You are a helpful voice AI assistant.
-            You eagerly assist users with their questions by providing information from your extensive knowledge.
-            Your responses are concise, to the point, and without any complex formatting or punctuation including emojis, asterisks, or other symbols.
-            You are curious, friendly, and have a sense of humor.""",
+            instructions=f"{ALL_PURPOSE_CONTEXT}",
+            stt=stt,
+            llm=llm_inst,
+            tts=tts,
+            vad=silero_vad,
+            allow_interruptions=True,
         )
 
-    # all functions annotated with @function_tool will be passed to the LLM when this
-    # agent is active
-    @function_tool
-    async def lookup_weather(self, context: RunContext, location: str):
-        """Use this tool to look up current weather information in the given location.
+    @function_tool()
+    async def classify_domain(self, user_question: str, context: RunContext) -> dict:
+        logger.info("Classifying domain for user request...")
+        response = await self.llm.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a domain classification model."},
+                {"role": "user", "content": ALL_PURPOSE_CONTEXT.replace("{user_question}", user_question)},
+            ],
+            max_tokens=150,
+        )
+        try:
+            classification = json.loads(response.choices[0].message.content)
+            logger.info(f"Classification result: {classification}")
+            return classification
+        except Exception as e:
+            logger.error(f"Domain classification failed: {e}")
+            return {"domain": None, "tool": None}
 
-        If the location is not supported by the weather service, the tool will indicate this. You must tell the user the location's weather is unavailable.
+    @function_tool()
+    async def handle_user_query(self, user_question: str, context: RunContext):
+        filler_audio = get_random_filler()
+        if filler_audio:
+            await context.agent_session.background_audio.set_thinking([filler_audio])
 
-        Args:
-            location: The location to look up weather information for (e.g. city name)
-        """
+        classification = await self.classify_domain(user_question, context)
+        domain = classification.get("domain")
+        tool = classification.get("tool")
 
-        logger.info(f"Looking up weather for {location}")
+        logger.info(f"Routing request: domain={domain}, tool={tool}")
 
-        return "sunny with a temperature of 70 degrees."
+        if domain == "healthcare":
+            logger.info("HANDOFF: Dispatcher → HealthcareAgent")
+            return HospitalAgent(), f"Switching to Healthcare Agent for {tool}"
+        elif domain == "airline":
+            logger.info("HANDOFF: Dispatcher → AirlineAgent")
+            return AirlineAgent(), f"Switching to Airline Agent for {tool}"
+        elif domain == "restaurant":
+            logger.info("HANDOFF: Dispatcher → RestaurantAgent")
+            return RestaurantAgent(), f"Switching to Restaurant Agent for {tool}"
+        elif domain == "insurance":
+            logger.info("HANDOFF: Dispatcher → InsuranceAgent")
+            return InsuranceAgent(), f"Switching to Insurance Agent for {tool}"
+        elif domain == "aisystems":
+            logger.info("HANDOFF: Dispatcher → AISystemsAgent")
+            return AISystemsAgent(), f"Switching to AISystems Agent for {tool}"
+        else:
+            logger.warning("HANDOFF FAILED: Domain not recognized")
+            return None, "❌ Sorry, I couldn't identify which service your question is related to."
 
 
+# ------------------ AGENT LIFECYCLE ------------------
 def prewarm(proc: JobProcess):
     proc.userdata["vad"] = silero.VAD.load()
 
 
 async def entrypoint(ctx: JobContext):
-    # Logging setup
-    # Add any other context you want in all log entries here
-    ctx.log_context_fields = {
-        "room": ctx.room.name,
-    }
+    logger.info(f"Connecting dispatcher agent to room {ctx.room.name}")
+    await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
 
-    # Set up a voice AI pipeline using OpenAI, Cartesia, Deepgram, and the LiveKit turn detector
     session = AgentSession(
-        # A Large Language Model (LLM) is your agent's brain, processing user input and generating a response
-        # See all providers at https://docs.livekit.io/agents/integrations/llm/
-        llm=openai.LLM(model="gpt-4o-mini"),
-        # Speech-to-text (STT) is your agent's ears, turning the user's speech into text that the LLM can understand
-        # See all providers at https://docs.livekit.io/agents/integrations/stt/
-        stt=deepgram.STT(model="nova-3", language="multi"),
-        # Text-to-speech (TTS) is your agent's voice, turning the LLM's text into speech that the user can hear
-        # See all providers at https://docs.livekit.io/agents/integrations/tts/
-        tts=cartesia.TTS(voice="6f84f4b8-58a2-430c-8c79-688dad597532"),
-        # VAD and turn detection are used to determine when the user is speaking and when the agent should respond
-        # See more at https://docs.livekit.io/agents/build/turns
-        turn_detection=MultilingualModel(),
         vad=ctx.proc.userdata["vad"],
-        # allow the LLM to generate a response while waiting for the end of turn
-        # See more at https://docs.livekit.io/agents/build/audio/#preemptive-generation
-        preemptive_generation=True,
+        userdata={},
     )
 
-    # To use a realtime model instead of a voice pipeline, use the following session setup instead:
-    # session = AgentSession(
-    #     # See all providers at https://docs.livekit.io/agents/integrations/realtime/
-    #     llm=openai.realtime.RealtimeModel(voice="marin")
-    # )
-
-    # sometimes background noise could interrupt the agent session, these are considered false positive interruptions
-    # when it's detected, you may resume the agent's speech
-    @session.on("agent_false_interruption")
-    def _on_agent_false_interruption(ev: AgentFalseInterruptionEvent):
-        logger.info("false positive interruption, resuming")
-        session.generate_reply(instructions=ev.extra_instructions or NOT_GIVEN)
-
-    # Metrics collection, to measure pipeline performance
-    # For more information, see https://docs.livekit.io/agents/build/metrics/
+    agent = DispatcherAgent()
     usage_collector = metrics.UsageCollector()
+    conversation_log = []
 
-    @session.on("metrics_collected")
-    def _on_metrics_collected(ev: MetricsCollectedEvent):
-        metrics.log_metrics(ev.metrics)
-        usage_collector.collect(ev.metrics)
+    @session.on("user_message")
+    def on_user_message(msg):
+        if msg.text.strip():
+            conversation_log.append({
+                "role": "user",
+                "text": msg.text,
+                "timestamp": datetime.utcnow().isoformat()
+            })
 
-    async def log_usage():
-        summary = usage_collector.get_summary()
-        logger.info(f"Usage: {summary}")
+    @session.on("assistant_message")
+    def on_assistant_message(msg):
+        if msg.text.strip():
+            conversation_log.append({
+                "role": "assistant",
+                "text": msg.text,
+                "timestamp": datetime.utcnow().isoformat()
+            })
 
-    ctx.add_shutdown_callback(log_usage)
+    @ctx.room.on("participant_connected")
+    def on_connected(remote: rtc.RemoteParticipant):
+        logger.info("Participant connected.")
 
-    # # Add a virtual avatar to the session, if desired
-    # # For other providers, see https://docs.livekit.io/agents/integrations/avatar/
-    # avatar = hedra.AvatarSession(
-    #   avatar_id="...",  # See https://docs.livekit.io/agents/integrations/avatar/hedra
-    # )
-    # # Start the avatar and wait for it to join
-    # await avatar.start(session, room=ctx.room)
+    @ctx.room.on("participant_disconnected")
+    def on_finished(remote: rtc.RemoteParticipant):
+        record = {
+            "conversation": conversation_log,
+            "metrics": usage_collector.get_summary().__dict__
+        }
+        with open("dispatcher_agent_log.json", "a", encoding="utf-8") as f:
+            json.dump(record, f, ensure_ascii=False)
+            f.write("\n")
+        logger.info("Session record saved.")
 
-    # Start the session, which initializes the voice pipeline and warms up the models
+    @session.on("agent_handoff")
+    def on_agent_handoff(new_agent, message):
+        logger.info(f"HANDOFF: {type(new_agent).__name__} - {message}")
+        asyncio.create_task(session.set_agent(new_agent))
+
     await session.start(
-        agent=Assistant(),
+        agent=agent,
         room=ctx.room,
-        room_input_options=RoomInputOptions(
-            # LiveKit Cloud enhanced noise cancellation
-            # - If self-hosting, omit this parameter
-            # - For telephony applications, use `BVCTelephony` for best results
-            noise_cancellation=noise_cancellation.BVC(),
-        ),
+        room_input_options=RoomInputOptions(),
     )
-
-    # Join the room and connect to the user
-    await ctx.connect()
-
 
 if __name__ == "__main__":
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm))
+    cli.run_app(
+        WorkerOptions(
+            entrypoint_fnc=entrypoint,
+            prewarm_fnc=prewarm,
+        ),
+    )

@@ -31,16 +31,16 @@ from livekit.plugins import openai, silero
 from livekit.agents import BackgroundAudioPlayer, AudioConfig, BuiltinAudioClip
 from livekit.agents.llm import ChatMessage
 from livekit import rtc
-
-# Pydantic for validation
-from pydantic import BaseModel, EmailStr, field_validator
+from datetime import datetime, timedelta
+import random
+from pydantic import BaseModel, EmailStr, field_validator, model_validator
 
 logger = logging.getLogger("airline-voice-agent")
 load_dotenv(dotenv_path=".env")
 
 # OpenAI client for helper calls (mirrors your usage)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
+today = datetime.now().date()
 # Session data fallback
 if not hasattr(RunContext, "session_data"):
     RunContext.session_data = {}
@@ -100,10 +100,12 @@ DUMMY_CANCELLATION_POLICY = (
 
 # Dummy booking storage (for simulation only)
 # ---------------- Dummy Booking Records ----------------
+from datetime import datetime, timedelta, timezone
+
 DUMMY_BOOKINGS = [
-    {"booking_id": "BK10001","passenger": "Ali Raza", "email": "ali.raza@example.com","flight_number": "SB101", "route": "KHI → DXB", "seat_class": "Economy", "num_passengers": 1, "total_fare": "PKR 45,000", "date": str(datetime.now().date()), "timestamp": datetime.utcnow().isoformat(),},
-    {"booking_id": "BK10002","passenger": "Sara Khan","email": "sara.khan@example.com","flight_number": "SB202","route": "KHI → LHR","seat_class": "Business","num_passengers": 2,"total_fare": "PKR 290,000","date": str(datetime.now().date() + timedelta(days=1)),"timestamp": datetime.utcnow().isoformat(),},
-    {"booking_id": "BK10003","passenger": "Zain Ahmed","email": "zain.ahmed@example.com","flight_number": "SB909","route": "KHI → ISB","seat_class": "Economy","num_passengers": 1,"total_fare": "PKR 25,000","date": str(datetime.now().date()),"timestamp": datetime.utcnow().isoformat(),},
+    {"booking_id": "BK10001", "passenger": "Ali Raza","email": "ali.raza@example.com","flight_number": "SB101","route": "KHI → DXB","seat_class": "Economy","num_passengers": 1,"total_fare": "PKR 45,000","date": str(datetime.now().date()),"timestamp": datetime.now(timezone.utc).isoformat(),},
+    {"booking_id": "BK10002","passenger": "Sara Khan","email": "sara.khan@example.com","flight_number": "SB202","route": "KHI → LHR","seat_class": "Business","num_passengers": 2,"total_fare": "PKR 290,000","date": str(datetime.now().date() + timedelta(days=1)),"timestamp": datetime.now(timezone.utc).isoformat(),},
+    {"booking_id": "BK10003","passenger": "Zain Ahmed","email": "zain.ahmed@example.com","flight_number": "SB909","route": "KHI → ISB", "seat_class": "Economy","num_passengers": 1,"total_fare": "PKR 25,000","date": str(datetime.now().date()),"timestamp": datetime.now(timezone.utc).isoformat(),},
 ]
 
  #     # --- Filler audio list (short clips, e.g. wav files)
@@ -136,15 +138,17 @@ class FlightSearchInput(BaseModel):
     destination: Optional[str] = Field(None, description="Destination airport code like DXB")
     date: Optional[str] = Field(None, description="Flight date in YYYY-MM-DD format")
 
+
 class BookingLookupInput(BaseModel):
     booking_id: Optional[str] = Field(None, description="Booking ID assigned during flight reservation (e.g., BK12345)")
     email: Optional[EmailStr] = Field(None, description="Email address used at the time of booking")
 
-    @field_validator("booking_id", "email", mode="before")
-    def at_least_one(cls, v, values, **kwargs):
-        if not v and not values.get("booking_id") and not values.get("email"):
+    @model_validator(mode="after")
+    def at_least_one(cls, values):
+        if not values.booking_id and not values.email:
             raise ValueError("Either booking_id or email must be provided to look up a booking.")
-        return v
+        return values
+
 
 class FlightBookingInput(BaseModel):
     full_name: str = Field(..., description="Passenger full name as per passport")
@@ -215,7 +219,7 @@ class AirlineAgent(Agent):
         flight_info: FlightStatusInput,
         context: RunContext = None,
     ) -> dict:
-       """
+        """
         Situation:
             Called when the user asks for the status of a specific flight.
             The user may provide a flight number (preferred) or a combination
@@ -281,7 +285,7 @@ class AirlineAgent(Agent):
         search_info: FlightSearchInput,
         context: RunContext = None,
     ) -> dict:
-       """
+        """
         Situation:
             Called when the user wants to explore or browse available flights.
             The query may include location, origin, destination, and/or date.
@@ -310,7 +314,7 @@ class AirlineAgent(Agent):
             }
             or
             {"message": "No flights found for your search."}
-    """
+        """
         logger.info(f"🔍 Searching flights: {search_info}")
 
         location = search_info.location.lower() if search_info.location else None

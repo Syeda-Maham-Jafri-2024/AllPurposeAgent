@@ -91,7 +91,7 @@ CLOSING_RE = re.compile(
     flags=re.IGNORECASE | re.UNICODE,
 )
 
-LOG_FILE = "session_summary.json"
+LOG_FILE = "aisystems_session_summary.json"
 
 # ====== Pydantic models for the Agent ======
 from pydantic import BaseModel, EmailStr, field_validator
