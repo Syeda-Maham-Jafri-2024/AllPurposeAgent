@@ -220,6 +220,10 @@ class InsuranceAgent(Agent):
             vad=silero_vad,
             allow_interruptions=True,
         )
+        
+        
+    async def on_enter(self):
+     await self.session.say("Welcome to SecureLife Insurance! How can I assist you today?")
 
     # -------- Get Contact Info --------
     @function_tool()
@@ -439,77 +443,77 @@ class InsuranceAgent(Agent):
 
 
 # -------------------- Agent lifecycle & entrypoint --------------------
-def prewarm(proc: JobProcess):
-    proc.userdata["vad"] = silero.VAD.load()
+# def prewarm(proc: JobProcess):
+#     proc.userdata["vad"] = silero.VAD.load()
 
-async def entrypoint(ctx: JobContext):
-    filler_task = None
-    logger.info(f"Connecting to room {ctx.room.name}")
-    await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
+# async def entrypoint(ctx: JobContext):
+#     filler_task = None
+#     logger.info(f"Connecting to room {ctx.room.name}")
+#     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
 
-    participant = await ctx.wait_for_participant()
-    logger.info(f"Starting insurance voice assistant for participant {participant.identity}")
+#     participant = await ctx.wait_for_participant()
+#     logger.info(f"Starting insurance voice assistant for participant {participant.identity}")
 
-    session = AgentSession(
-        vad=ctx.proc.userdata["vad"],
-        min_endpointing_delay=0.9,
-        max_endpointing_delay=5.0,
-    )
+#     session = AgentSession(
+#         vad=ctx.proc.userdata["vad"],
+#         min_endpointing_delay=0.9,
+#         max_endpointing_delay=5.0,
+#     )
 
-    agent = InsuranceAgent()
-    usage_collector = metrics.UsageCollector()
-    conversation_log = []
+#     agent = InsuranceAgent()
+#     usage_collector = metrics.UsageCollector()
+#     conversation_log = []
 
-    @session.on("user_message")
-    def on_user_message(msg):
-        nonlocal filler_task
-        if msg.text.strip():
-            conversation_log.append({"role": "user", "text": msg.text, "timestamp": datetime.utcnow().isoformat()})
-            text = msg.text.lower().strip()
-            if CLOSING_RE.match(text):
-                if filler_task and not filler_task.done():
-                    filler_task.cancel()
-                return
-            async def delayed_filler():
-                await asyncio.sleep(1.0)
-                filler = random.choice(FILLER_AUDIO)
-                await background_audio.set_thinking([AudioConfig(filler, volume=0.9)])
-            filler_task = asyncio.create_task(delayed_filler())
+#     @session.on("user_message")
+#     def on_user_message(msg):
+#         nonlocal filler_task
+#         if msg.text.strip():
+#             conversation_log.append({"role": "user", "text": msg.text, "timestamp": datetime.utcnow().isoformat()})
+#             text = msg.text.lower().strip()
+#             if CLOSING_RE.match(text):
+#                 if filler_task and not filler_task.done():
+#                     filler_task.cancel()
+#                 return
+#             async def delayed_filler():
+#                 await asyncio.sleep(1.0)
+#                 filler = random.choice(FILLER_AUDIO)
+#                 await background_audio.set_thinking([AudioConfig(filler, volume=0.9)])
+#             filler_task = asyncio.create_task(delayed_filler())
 
-    @session.on("assistant_message")
-    def on_assistant_message(msg):
-        if msg.text.strip():
-            conversation_log.append({"role": "assistant", "text": msg.text, "timestamp": datetime.utcnow().isoformat()})
+#     @session.on("assistant_message")
+#     def on_assistant_message(msg):
+#         if msg.text.strip():
+#             conversation_log.append({"role": "assistant", "text": msg.text, "timestamp": datetime.utcnow().isoformat()})
 
-    @ctx.room.on("participant_connected")
-    def on_connected(remote: rtc.RemoteParticipant):
-        logger.info("-------- Call Started -------")
+#     @ctx.room.on("participant_connected")
+#     def on_connected(remote: rtc.RemoteParticipant):
+#         logger.info("-------- Call Started -------")
 
-    @ctx.room.on("participant_disconnected")
-    def on_finished(remote: rtc.RemoteParticipant):
-        summary = usage_collector.get_summary()
-        record = {"conversation": conversation_log, "metrics": summary.__dict__}
-        with open("insurance_agent_log.json", "a", encoding="utf-8") as f:
-            json.dump(record, f, ensure_ascii=False)
-            f.write("\n")
-        logger.info("Session record saved.")
+#     @ctx.room.on("participant_disconnected")
+#     def on_finished(remote: rtc.RemoteParticipant):
+#         summary = usage_collector.get_summary()
+#         record = {"conversation": conversation_log, "metrics": summary.__dict__}
+#         with open("insurance_agent_log.json", "a", encoding="utf-8") as f:
+#             json.dump(record, f, ensure_ascii=False)
+#             f.write("\n")
+#         logger.info("Session record saved.")
 
-    ctx.call_start = datetime.utcnow()
-    await session.start(room=ctx.room, agent=agent, room_input_options=RoomInputOptions())
+#     ctx.call_start = datetime.utcnow()
+#     await session.start(room=ctx.room, agent=agent, room_input_options=RoomInputOptions())
 
-    global background_audio
-    background_audio = BackgroundAudioPlayer(
-        ambient_sound=AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.5),
-        thinking_sound=[AudioConfig(f, volume=0.9) for f in FILLER_AUDIO] if FILLER_AUDIO else [],
-    )
-    await background_audio.start(room=ctx.room, agent_session=session)
+#     global background_audio
+#     background_audio = BackgroundAudioPlayer(
+#         ambient_sound=AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.5),
+#         thinking_sound=[AudioConfig(f, volume=0.9) for f in FILLER_AUDIO] if FILLER_AUDIO else [],
+#     )
+#     await background_audio.start(room=ctx.room, agent_session=session)
 
-    await session.say("Welcome to SecureLife Insurance — your virtual assistant. How can I help you today?")
+#     await session.say("Welcome to SecureLife Insurance — your virtual assistant. How can I help you today?")
 
-if __name__ == "__main__":
-    cli.run_app(
-        WorkerOptions(
-            entrypoint_fnc=entrypoint,
-            prewarm_fnc=prewarm,
-        ),
-    )
+# if __name__ == "__main__":
+#     cli.run_app(
+#         WorkerOptions(
+#             entrypoint_fnc=entrypoint,
+#             prewarm_fnc=prewarm,
+#         ),
+#     )
