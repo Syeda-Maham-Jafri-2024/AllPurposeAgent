@@ -45,6 +45,110 @@ today = datetime.now().date()
 if not hasattr(RunContext, "session_data"):
     RunContext.session_data = {}
 
+
+# --------------------- Sample Conversation between the User and the Agent ------------------------
+"""
+✈️ 1. Get Airline Info
+   - User: What are your office hours?
+     Tool Called: get_airline_info(field="office_hours")
+     Agent Response:
+     Our customer service is available Monday to Sunday, from 8 AM to 10 PM Pakistan Standard Time.
+
+   - User: Can you tell me your contact details?
+     Tool Called: get_airline_info()
+     Agent Response:
+     You can reach SkyBridge Airlines at +92-21-33445566 or email us at support@skybridge.com.
+     Our main office is located at Terminal 1, Jinnah International Airport, Karachi.
+
+🧳 2. Baggage Allowance
+   - User: What is the baggage allowance for business class?
+     Tool Called: baggage_allowance(seat_class="business")
+     Agent Response:
+     For business class passengers, you can carry up to 40 kg of checked baggage and one cabin bag up to 12 kg.
+
+   - User: What about economy class?
+     Tool Called: baggage_allowance(seat_class="economy")
+     Agent Response:
+     Economy class passengers can carry up to 25 kg of checked baggage and one cabin bag up to 7 kg.
+
+🔍 3. Search Flights
+   - User: Show me flights from Karachi to Dubai on 2025-10-10.
+     Tool Called: search_flights(search_info={"origin": "Karachi", "destination": "Dubai", "date": "2025-10-10"})
+     Agent Response:
+     I found 2 flights from Karachi to Dubai on October 10, 2025:
+     • Flight SB101 — Departs 08:00 AM, Arrives 10:00 AM, Fare PKR 45,000.
+     • Flight SB103 — Departs 09:30 PM, Arrives 11:30 PM, Fare PKR 46,500.
+
+🕐 4. Check Flight Status
+   - User: What’s the status of flight SB101?
+     Tool Called: check_flight_status(flight_info={"flight_number": "SB101"})
+     Agent Response:
+     Flight SB101 from Karachi to Dubai is scheduled to depart at 08:00 AM from Terminal 1, Gate A12.
+     The flight is currently On Time.
+
+💺 5. Book Flight
+   - User: I’d like to book flight SB101 for 2 passengers in economy class.
+     Tool Called: book_flight(request={
+         "full_name": "Sara Khan",
+         "email": "sara.khan@example.com",
+         "flight_number": "SB101",
+         "seat_class": "economy",
+         "num_passengers": 2,
+         "confirm": false
+     })
+     Agent Response:
+     Here’s your booking preview:
+     • Passenger: Sara Khan  
+     • Flight: SB101 (Karachi → Dubai)  
+     • Class: Economy  
+     • Passengers: 2  
+     • Total Fare: PKR 90,000  
+     Would you like me to confirm this booking?
+
+   - User: Yes, please confirm my booking.
+     Tool Called: book_flight(request={
+         "full_name": "Sara Khan",
+         "email": "sara.khan@example.com",
+         "flight_number": "SB101",
+         "seat_class": "economy",
+         "num_passengers": 2,
+         "confirm": true
+     })
+     Agent Response:
+     Your booking has been confirmed!  
+     Booking ID: BK24789  
+     A confirmation email has been sent to sara.khan@example.com.  
+     Thank you for flying with SkyBridge Airlines.
+
+📄 6. View Booking Status
+   - User: Can you check my booking using my email sara.khan@example.com?
+     Tool Called: view_booking_status(lookup={"email": "sara.khan@example.com"})
+     Agent Response:
+     Here are your booking details:
+     • Booking ID: BK24789  
+     • Flight: SB101 (Karachi → Dubai)  
+     • Class: Economy  
+     • Passengers: 2  
+     • Total Fare: PKR 90,000  
+     • Status: On Time  
+     Have a safe and pleasant journey!
+
+💰 7. Cancellation & Refund Policy
+   - User: What’s your cancellation policy?
+     Tool Called: cancellation_policy()
+     Agent Response:
+     Refunds depend on fare rules.  
+     Non-refundable fares cannot be refunded but can be rebooked for a small change fee.  
+     Refundable fares are subject to processing fees as per your fare conditions.
+
+👋 8. Closing
+   - User: Thanks for your help.
+     Agent Response:
+     You’re most welcome!  
+     Thank you for choosing SkyBridge Airlines. Have a wonderful trip ahead.
+
+"""
+
 # Airline contact / meta info
 AIRLINE_INFO = {
     "name": "SkyBridge Airlines",
@@ -630,6 +734,35 @@ class AirlineAgent(Agent):
             "Non-refundable fares cannot be refunded but may be rebooked for a change fee. "
             "Refundable fares are subject to processing fees. For exact terms check your fare conditions or provide your PNR."
         )
+
+    # ------------------------ HANDOFF FUNCTIONS ------------------------
+    @function_tool()
+    async def handoff_to_insurance(self, context: RunContext[UserContext]):
+        """Transfer the user to the insurance assistant."""
+        logger.info("Handing off to InsuranceAgent.")
+        insurance_agent = InsuranceAgent()
+        return insurance_agent, "Switching you to our insurance assistant."
+
+    @function_tool()
+    async def handoff_to_healthcare(self, context: RunContext[UserContext]):
+        """Transfer the user to the healthcare assistant."""
+        logger.info("Handing off to HealthcareAgent.")
+        healthcare_agent = HospitalAgent()
+        return healthcare_agent, "Switching you to our healthcare assistant."
+
+    @function_tool()
+    async def handoff_to_restaurant(self, context: RunContext[UserContext]):
+        """Transfer the user to the restaurant assistant."""
+        logger.info("Handing off to RestaurantAgent.")
+        restaurant_agent = RestaurantAgent()
+        return restaurant_agent, "Switching you to our restaurant assistant."
+
+    @function_tool()
+    async def handoff_to_aisystems(self, context: RunContext[UserContext]):
+        """Transfer the user to the AI Systems assistant."""
+        logger.info("Handing off to AISystemsAgent.")
+        aisystems_agent = AISystemsAgent()
+        return aisystems_agent, "Switching you to our AI Systems support assistant."
 
 
 # # -------------------- Agent lifecycle & entrypoint --------------------

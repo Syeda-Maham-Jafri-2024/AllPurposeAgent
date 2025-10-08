@@ -588,6 +588,36 @@ class AISystemsAgent(Agent):
         logger.info(f"Selected Product Section: {result}")
 
         return result
+    
+    # ----------------------- Handoff Functions -----------------------
+    @function_tool()
+    async def handoff_to_insurance(self, context: RunContext[UserContext]):
+        """Transfer the user to the insurance assistant."""
+        logger.info("Handing off to InsuranceAgent.")
+        insurance_agent = InsuranceAgent()
+        return insurance_agent, "Switching you to our insurance assistant."
+
+    @function_tool()
+    async def handoff_to_healthcare(self, context: RunContext[UserContext]):
+        """Transfer the user to the healthcare assistant."""
+        logger.info("Handing off to HealthcareAgent.")
+        healthcare_agent = HospitalAgent()
+        return healthcare_agent, "Switching you to our healthcare assistant."
+
+    @function_tool()
+    async def handoff_to_airline(self, context: RunContext[UserContext]):
+        """Transfer the user to the airline assistant."""
+        logger.info("Handing off to AirlineAgent.")
+        airline_agent = AirlineAgent()
+        return airline_agent, "Switching you to our airline assistant."
+
+    @function_tool()
+    async def handoff_to_restaurant(self, context: RunContext[UserContext]):
+        """Transfer the user to the restaurant assistant."""
+        logger.info("Handing off to RestaurantAgent.")
+        restaurant_agent = RestaurantAgent()
+        return restaurant_agent, "Switching you to our restaurant assistant."
+
 
 
 

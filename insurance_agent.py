@@ -39,6 +39,71 @@ today = datetime.now().date()
 if not hasattr(RunContext, "session_data"):
     RunContext.session_data = {}
 
+# --------------------- Sample Conversation between the User and the Agent ------------------------
+"""
+💼 1. Get Contact Info
+   - User: What are your office hours?
+     Tool Called: get_contact_info(field="office_hours")
+     Agent Response: Our office is open Monday to Friday from 9 AM to 6 PM, and on Saturday from 10 AM to 2 PM.
+
+   - User: Can you give me your contact details?
+     Tool Called: get_contact_info()
+     Agent Response:
+     You can reach us at +92-300-1234567 or email support@securelife.com.
+     Our office is located at 123 Insurance Avenue, Karachi.
+
+🏥 2. Get Policy Details
+   - User: Tell me about your health insurance policy.
+     Tool Called: get_policy_details(policy_type="health insurance")
+     Agent Response:
+     Our health insurance plan covers hospitalization, surgeries, and medical prescriptions.
+     It ensures that your medical expenses are well taken care of.
+
+   - User: What about travel insurance?
+     Tool Called: get_policy_details(policy_type="travel insurance")
+     Agent Response:
+     Our travel insurance covers trip cancellations, lost luggage, and medical emergencies during your travel.
+
+🧾 3. View My Policies
+   - User: Can you show my active policies? My email is smjafri2002@gmail.com.
+     Tool Called: get_policy_info(user_email="smjafri2002@gmail.com")
+     Agent Response:
+     Sara Khan, you currently have two active policies:
+     1️⃣ Health Insurance — Individual coverage, Rs. 40,000 premium, due on January 15, 2026.
+     2️⃣ Life Insurance — Term Life coverage, Rs. 50,000 premium, due on May 1, 2026.
+
+💳 4. Check Payment History
+   - User: Can you show my payment history?
+     Tool Called: get_payment_history(user_email="smjafri2002@gmail.com")
+     Agent Response:
+     Here’s your payment history:
+     • Rs. 40,000 for Health Insurance on Jan 15, 2025 (Debit Card)
+     • Rs. 50,000 for Life Insurance on May 1, 2025 (Credit Card)
+
+📄 5. Check Claim Status
+   - User: What’s the status of my recent claim?
+     Tool Called: get_claim_status(user_email="smjafri2002@gmail.com")
+     Agent Response:
+     You have two claims:
+     ✅ Claim CLM002 for Health Insurance — Approved.
+     💼 Claim CLM006 for Life Insurance — Processed and completed.
+
+🩺 6. File a New Claim
+   - User: I want to file a claim for my health policy POL654321 for a surgery last week.
+     Tool Called: file_claim(request={
+        "policy_number": "POL654321",
+        "claim_type": "Surgery Reimbursement",
+        "incident_date": "2025-10-01",
+        "description": "Surgery for appendix removal.",
+        "attachments": ["surgery_report.pdf"]
+     })
+     Agent Response:
+     Your claim has been successfully filed under ID CLM2437 and is now under review.
+     You’ll receive a confirmation email shortly.
+
+"""
+
+
 # ------------------ DUMMY INSURANCE DATA ------------------
 
 # Dummy company contact info
@@ -440,6 +505,35 @@ class InsuranceAgent(Agent):
                     f"Description: {claim['description']}"
                 )
         return "\n\n".join(results) if results else "No matching claims found."
+
+    # ------------------------ HANDOFF FUNCTIONS ------------------------
+    @function_tool()
+    async def handoff_to_healthcare(self, context: RunContext[UserContext]):
+        """Transfer the user to the healthcare assistant."""
+        logger.info("Handing off to HealthcareAgent.")
+        healthcare_agent = HospitalAgent()
+        return healthcare_agent, "Switching you to our healthcare assistant."
+
+    @function_tool()
+    async def handoff_to_airline(self, context: RunContext[UserContext]):
+        """Transfer the user to the airline assistant."""
+        logger.info("Handing off to AirlineAgent.")
+        airline_agent = AirlineAgent()
+        return airline_agent, "Switching you to our airline assistant."
+
+    @function_tool()
+    async def handoff_to_restaurant(self, context: RunContext[UserContext]):
+        """Transfer the user to the restaurant assistant."""
+        logger.info("Handing off to RestaurantAgent.")
+        restaurant_agent = RestaurantAgent()
+        return restaurant_agent, "Switching you to our restaurant assistant."
+
+    @function_tool()
+    async def handoff_to_aisystems(self, context: RunContext[UserContext]):
+        """Transfer the user to the AI Systems assistant."""
+        logger.info("Handing off to AISystemsAgent.")
+        aisystems_agent = AISystemsAgent()
+        return aisystems_agent, "Switching you to our AI Systems support assistant."
 
 
 # -------------------- Agent lifecycle & entrypoint --------------------

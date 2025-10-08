@@ -90,6 +90,30 @@ APPOINTMENTS = {
     },
 }
 
+# Dummy reports data
+REPORTS = {
+    "RPT001": {
+        "patient_name": "Ali Khan", "test_name": "Blood Test", "status": "Completed", "date": "2025-10-04", "remarks": "Normal blood count levels.", },
+    "RPT002": {
+        "patient_name": "Sara Ahmed", "test_name": "X-Ray (Chest)", "status": "In Progress", "date": "2025-10-06", "remarks": "Awaiting radiologist review.",},
+    "RPT003": {
+        "patient_name": "Bilal Hussain", "test_name": "MRI (Brain)", "status": "Pending", "date": "2025-10-07", "remarks": "Test scheduled tomorrow.", },
+    "RPT004": {
+        "patient_name": "Fatima Noor", "test_name": "Urine Analysis", "status": "Completed", "date": "2025-10-03", "remarks": "No signs of infection detected.", },
+    "RPT005": {
+        "patient_name": "Hassan Raza", "test_name": "ECG", "status": "Completed", "date": "2025-10-02", "remarks": "Minor irregularities, follow-up recommended.",},
+    "RPT006": {
+        "patient_name": "Ayesha Siddiqui", "test_name": "Thyroid Function Test", "status": "In Progress", "date": "2025-10-05", "remarks": "Lab processing underway.",},
+    "RPT007": {
+        "patient_name": "Imran Sheikh", "test_name": "COVID-19 PCR", "status": "Completed","date": "2025-10-01", "remarks": "Negative result.", },
+    "RPT008": {
+        "patient_name": "Zara Malik", "test_name": "Ultrasound (Abdomen)", "status": "Pending", "date": "2025-10-08", "remarks": "Test scheduled for today at 3 PM.",},
+    "RPT009": {
+        "patient_name": "Usman Tariq", "test_name": "Liver Function Test", "status": "Completed", "date": "2025-09-30", "remarks": "Slightly elevated enzyme levels, doctor review advised.",},
+    "RPT010": {
+        "patient_name": "Maryam Shah", "test_name": "CT Scan (Abdomen)","status": "In Progress", "date": "2025-10-06", "remarks": "Scans uploaded, awaiting radiologist’s summary.",},
+}
+
 
 
 # ------------------ EMAIL UTILITY ------------------
@@ -134,51 +158,9 @@ class AppointmentRequest(BaseModel):
             raise ValueError("Appointment date cannot be in the past.")
         return value
 
-
-class RescheduleRequest(BaseModel):
-    """Model for rescheduling an appointment with natural-language date & time"""
-    appointment_id: str
-    new_date: dt_date
-    new_time: Optional[str] = None  # optional; can be "5 pm", "17:00", etc.
-
-    # --- Validate appointment ID ---
-    @field_validator("appointment_id")
-    def validate_id_format(cls, v):
-        if not v.startswith("APT"):
-            raise ValueError("Invalid appointment ID format.")
-        if v not in APPOINTMENTS:
-            raise ValueError(f"Appointment ID '{v}' not found.")
-        return v
-
-    # --- Parse natural-language date ---
-    @field_validator("new_date", mode="before")
-    def parse_natural_language_date(cls, value):
-        if isinstance(value, str):
-            parsed = dateparser.parse(value)
-            if not parsed:
-                raise ValueError(f"❌ Could not parse date from '{value}'.")
-            return parsed.date()
-        return value
-
-    # --- Parse and normalize time (optional) ---
-    @field_validator("new_time", mode="before")
-    def normalize_time_format(cls, value):
-        if value is None:
-            return value
-        if isinstance(value, str):
-            parsed_time = dateparser.parse(value)
-            if parsed_time:
-                return parsed_time.strftime("%I:%M %p")
-        return value
-
-    # --- Validate future date ---
-    @field_validator("new_date")
-    def validate_future_date(cls, v):
-        if v < dt_date.today():
-            raise ValueError("New date cannot be in the past.")
-        return v
-
-
+class ReportQuery(BaseModel):
+    report_id: str
+    patient_name: Optional[str] = None
 
 class CancelRequest(BaseModel):
     """Model for cancelling an appointment"""
@@ -191,6 +173,52 @@ class CancelRequest(BaseModel):
         if v not in APPOINTMENTS:
             raise ValueError(f"Appointment ID '{v}' not found.")
         return v
+
+# ----------------- Helper Functions ---------------
+
+import calendar
+
+def is_doctor_available(doctor_name: str, appointment_date: dt_date, appointment_time_str: str) -> tuple[bool, str]:
+    """
+    Checks if the doctor is available on the requested day and time.
+    Returns (True, message) if valid, else (False, reason).
+    """
+    doc_info = DOCTORS.get(doctor_name)
+    if not doc_info:
+        return False, f"Doctor '{doctor_name}' not found."
+
+    timing_str = doc_info["timings"]  # e.g., "Mon–Fri: 10 AM – 2 PM"
+    match = re.match(r"([A-Za-z]{3})[–-]([A-Za-z]{3}):\s*(\d{1,2}\s*[AP]M)\s*[–-]\s*(\d{1,2}\s*[AP]M)", timing_str)
+    if not match:
+        return False, f"Could not parse timings for {doctor_name}."
+
+    start_day, end_day, start_time_str, end_time_str = match.groups()
+
+    # Convert to comparable objects
+    weekdays = list(calendar.day_abbr)  # ['Mon', 'Tue', ...]
+    start_index = weekdays.index(start_day)
+    end_index = weekdays.index(end_day)
+    appointment_day = appointment_date.weekday()  # Monday = 0
+
+    # Handle week wrap (e.g., Fri–Mon)
+    if start_index <= end_index:
+        day_in_range = start_index <= appointment_day <= end_index
+    else:
+        day_in_range = appointment_day >= start_index or appointment_day <= end_index
+
+    if not day_in_range:
+        return False, f"{doctor_name} is only available {timing_str}."
+
+    # Parse times to compare
+    start_time = datetime.strptime(start_time_str, "%I %p").time()
+    end_time = datetime.strptime(end_time_str, "%I %p").time()
+    requested_time = dateparser.parse(appointment_time_str).time()
+
+    if not (start_time <= requested_time <= end_time):
+        return False, f"{doctor_name} is available only between {start_time_str} and {end_time_str}."
+
+    return True, f"{doctor_name} is available at {appointment_time_str} on that day."
+
 
 # ------------------ HOSPITAL AGENT ------------------
 
@@ -285,6 +313,13 @@ class HospitalAgent(Agent):
     async def schedule_appointment(self, request: AppointmentRequest, context: RunContext) -> str:
         logger.info(f"📝 Scheduling validated appointment for {request.name} with {request.doctor_name} on {request.date}")
 
+        # --- Check doctor's availability ---
+        available, msg = is_doctor_available(request.doctor_name, request.date, request.time)
+        if not available:
+            logger.warning(f"❌ Appointment rejected: {msg}")
+            return f"❌ Sorry, {msg} Please choose another time within their working hours."
+
+        # --- Proceed with appointment booking ---
         appointment_id = f"APT{len(APPOINTMENTS)+1:03d}"
         APPOINTMENTS[appointment_id] = {
             "patient": request.name,
@@ -299,7 +334,7 @@ class HospitalAgent(Agent):
             f"ID: {appointment_id}\n"
             f"Patient: {request.name}\n"
             f"Doctor: {request.doctor_name}\n"
-            f"Date: {request.date}\n\n"
+            f"Date: {request.date} at {request.time}\n\n"
             f"Location: {HOSPITAL_INFO['address']}\n"
             f"Contact: {HOSPITAL_INFO['phone']}"
         )
@@ -314,213 +349,103 @@ class HospitalAgent(Agent):
 
         return confirmation_msg
 
-    # # -------- Reschedule Appointment --------
-    # @function_tool()
-    # async def reschedule_appointment(self, request: RescheduleRequest, context: RunContext) -> str:
-    #     logger.info(f"🔄 Rescheduling appointment {request.appointment_id} to {request.new_date} {request.new_time or ''}")
+    @function_tool
+    def check_report_status(query: ReportQuery) -> str:
+        """Check the status of a patient's medical report using their report ID."""
+        report = REPORTS.get(query.report_id)
+        if not report:
+            return f"Sorry, I couldn’t find any report with ID {query.report_id}. Please make sure it’s correct."
+        
+        return (
+            f"Report ID: {query.report_id}\n"
+            f"Patient Name: {report['patient_name']}\n"
+            f"Test Name: {report['test_name']}\n"
+            f"Status: {report['status']}\n"
+            f"Date: {report['date']}\n"
+            f"Remarks: {report['remarks']}"
+    )
 
-    #     appointment = APPOINTMENTS.get(request.appointment_id)
-    #     if not appointment:
-    #         logger.error(f"Appointment {request.appointment_id} vanished from store")
-    #         return f"❌ Appointment ID {request.appointment_id} not found."
+    # async def schedule_appointment(self, request: AppointmentRequest, context: RunContext) -> str:
+    #     logger.info(f"📝 Scheduling validated appointment for {request.name} with {request.doctor_name} on {request.date}")
 
-    #     old_date = appointment["date"]
-    #     old_time = appointment.get("time", "Not specified")
+    #     appointment_id = f"APT{len(APPOINTMENTS)+1:03d}"
+    #     APPOINTMENTS[appointment_id] = {
+    #         "patient": request.name,
+    #         "email": request.email,
+    #         "doctor": request.doctor_name,
+    #         "date": str(request.date),
+    #         "time": request.time,
+    #     }
 
-    #     # --- Update fields ---
-    #     appointment["date"] = str(request.new_date)
-    #     if request.new_time:
-    #         appointment["time"] = request.new_time
-
-    #     msg = (
-    #         f"✅ Appointment rescheduled!\n\n"
-    #         f"ID: {request.appointment_id}\n"
-    #         f"Patient: {appointment['patient']}\n"
-    #         f"Doctor: {appointment['doctor']}\n"
-    #         f"Old Date & Time: {old_date}, {old_time}\n"
-    #         f"New Date & Time: {request.new_date}, {appointment.get('time', old_time)}"
+    #     confirmation_msg = (
+    #         f"✅ Appointment confirmed!\n\n"
+    #         f"ID: {appointment_id}\n"
+    #         f"Patient: {request.name}\n"
+    #         f"Doctor: {request.doctor_name}\n"
+    #         f"Date: {request.date}\n\n"
+    #         f"Location: {HOSPITAL_INFO['address']}\n"
+    #         f"Contact: {HOSPITAL_INFO['phone']}"
     #     )
 
     #     email_body = (
-    #         f"Dear {appointment['patient']},\n\n"
-    #         f"Your appointment has been rescheduled.\n\n"
-    #         f"{msg}\n\n"
+    #         f"Dear {request.name},\n\n"
+    #         f"Your appointment has been scheduled.\n\n"
+    #         f"{confirmation_msg}\n\n"
     #         f"- CityCare Hospital"
     #     )
-    #     send_email_to_patient(appointment["email"], "Appointment Rescheduled", email_body)
-    #     return msg
+    #     send_email_to_patient(request.email, "Appointment Confirmation", email_body)
+
+    #     return confirmation_msg
 
 
-    # # -------- Cancel Appointment --------
-    # @function_tool()
-    # async def cancel_appointment(self, request: CancelRequest, context: RunContext) -> str:
-    #     logger.info(f"❌ Cancelling appointment {request.appointment_id}")
+    # -------- Cancel Appointment --------
+    @function_tool()
+    async def cancel_appointment(self, request: CancelRequest, context: RunContext) -> str:
+        logger.info(f"❌ Cancelling appointment {request.appointment_id}")
 
-    #     appointment = APPOINTMENTS.pop(request.appointment_id, None)
-    #     if not appointment:
-    #         logger.error(f"Appointment {request.appointment_id} vanished from store")
-    #         return f"❌ Appointment ID {request.appointment_id} not found."
+        appointment = APPOINTMENTS.pop(request.appointment_id, None)
+        if not appointment:
+            logger.error(f"Appointment {request.appointment_id} vanished from store")
+            return f"❌ Appointment ID {request.appointment_id} not found."
 
-    #     msg = (
-    #         f"✅ Appointment cancelled.\n\n"
-    #         f"ID: {request.appointment_id}\n"
-    #         f"Patient: {appointment['patient']}\n"
-    #         f"Doctor: {appointment['doctor']}\n"
-    #         f"Date: {appointment['date']}"
-    #     )
+        msg = (
+            f"✅ Appointment cancelled.\n\n"
+            f"ID: {request.appointment_id}\n"
+            f"Patient: {appointment['patient']}\n"
+            f"Doctor: {appointment['doctor']}\n"
+            f"Date: {appointment['date']}"
+        )
 
-    #     email_body = f"Dear {appointment['patient']},\n\nYour appointment has been cancelled.\n\n{msg}\n\n- CityCare Hospital"
-    #     send_email_to_patient(appointment["email"], "Appointment Cancelled", email_body)
+        email_body = f"Dear {appointment['patient']},\n\nYour appointment has been cancelled.\n\n{msg}\n\n- CityCare Hospital"
+        send_email_to_patient(appointment["email"], "Appointment Cancelled", email_body)
 
-    #     return msg
-
-
-# ------------------ AGENT LIFECYCLE ------------------
-# def prewarm(proc: JobProcess):
-#     proc.userdata["vad"] = silero.VAD.load()
-
-#     # Add this at the top of entrypoint
-
-# async def entrypoint(ctx: JobContext):
-#     filler_task = None  
-#     logger.info(f"connecting to room {ctx.room.name}")
-#     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
-
-#     # Wait for the first participant
-#     participant = await ctx.wait_for_participant()
-#     logger.info(f"starting voice assistant for participant {participant.identity}")
-
-#     session = AgentSession(
-#         vad=ctx.proc.userdata["vad"],
-#         min_endpointing_delay=0.9,
-#         max_endpointing_delay=5.0,
-#     )
-
-#     agent = HospitalAgent()
-#     usage_collector = metrics.UsageCollector()
-
-#     # Store conversation in memory
-#     conversation_log = []
+        return msg
     
-#     # ----------------------------
-#     # Metrics collection
-#     # ----------------------------
-#     @session.on("metrics_collected")
-#     def on_agent_metrics(agent_metrics: metrics.AgentMetrics):
-#         usage_collector.collect(agent_metrics)
+    # --------------- Handoff Functions ---------------------------
+    @function_tool()
+    async def handoff_to_insurance(self, context: RunContext[UserContext]):
+        """Transfer the user to the insurance assistant."""
+        logger.info("Handing off to InsuranceAgent.")
+        insurance_agent = InsuranceAgent()
+        return insurance_agent, "Switching you to our insurance assistant."
 
-#     @agent.llm.on("metrics_collected")
-#     def on_llm_metrics(llm_metrics: metrics.LLMMetrics):
-#         usage_collector.collect(llm_metrics)
+    @function_tool()
+    async def handoff_to_airline(self, context: RunContext[UserContext]):
+        """Transfer the user to the airline assistant."""
+        logger.info("Handing off to AirlineAgent.")
+        airline_agent = AirlineAgent()
+        return airline_agent, "Switching you to our airline assistant."
 
-#     @agent.stt.on("metrics_collected")
-#     def on_stt_metrics(stt_metrics: metrics.STTMetrics):
-#         usage_collector.collect(stt_metrics)
+    @function_tool()
+    async def handoff_to_restaurant(self, context: RunContext[UserContext]):
+        """Transfer the user to the restaurant assistant."""
+        logger.info("Handing off to RestaurantAgent.")
+        restaurant_agent = RestaurantAgent()
+        return restaurant_agent, "Switching you to our restaurant assistant."
 
-#     @agent.tts.on("metrics_collected")
-#     def on_tts_metrics(tts_metrics: metrics.TTSMetrics):
-#         usage_collector.collect(tts_metrics)
-
-#     @session.on("user_message")
-#     def on_user_message(msg):
-#         nonlocal filler_task  # so we can modify the outer variable
-#         if msg.text.strip():
-#             conversation_log.append(
-#                 {"role": "user", "text": msg.text, "timestamp": datetime.utcnow().isoformat()}
-#             )
-
-#             text = msg.text.lower().strip().replace("’", "'")
-#             if not hasattr(session, "ending"):
-#                 session.ending = False
-
-#             closing_keywords = [
-#                 "bye", "goodbye", "see you", "later", "thanks", "thank you",
-#                 "that's it", "no that's all", "talk soon", "done"
-#             ]
-
-#             # 🔑 If closing phrase detected → mark ending + cancel fillers
-#             if any(kw in text for kw in closing_keywords):
-#                 session.ending = True
-#                 if filler_task and not filler_task.done():
-#                     filler_task.cancel()
-#                     asyncio.create_task(background_audio.clear_thinking())
-#                 logger.info(f"Closing detected, skipping filler: {msg.text}")
-#                 return
-
-#             if session.ending:
-#                 logger.info(f"Session is ending, suppressing filler for: {msg.text}")
-#                 return
-
-#             # Otherwise schedule filler as usual
-#             async def delayed_filler():
-#                 await asyncio.sleep(1.0)
-#                 filler = get_random_filler()
-#                 logger.info(f"Playing filler after: {msg.text} → {filler}")
-#                 await background_audio.set_thinking([AudioConfig(filler, volume=0.9)])
-
-#             filler_task = asyncio.create_task(delayed_filler())
-
-#     @session.on("assistant_message")
-#     def on_assistant_message(msg):
-#         if msg.text.strip():
-#             conversation_log.append(
-#                 {"role": "assistant", "text": msg.text, "timestamp": datetime.utcnow().isoformat()}
-#             )
-#         # Always stop filler when assistant responds
-#         asyncio.create_task(background_audio.clear_thinking())
-
-#     @ctx.room.on("participant_connected")
-#     def on_connected(remote: rtc.RemoteParticipant):
-#         ctx.call_start = datetime.utcnow()
-#         logger.info("-------- Call Started -------")
-
-#     @ctx.room.on("participant_disconnected")
-#     def on_finished(remote: rtc.RemoteParticipant):
-#         call_start = getattr(ctx, "call_start", None)
-#         call_end = datetime.utcnow()
-
-#         duration_minutes = (call_end - call_start).total_seconds() / 60.0 if call_start else 0.0
-#         summary = usage_collector.get_summary()
-#         summary_dict = summary.__dict__ if hasattr(summary, "__dict__") else summary
-
-#         record = {
-#             "session_id": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
-#             "metrics": summary_dict,
-#             "duration_minutes": duration_minutes,
-#             "conversation": conversation_log,
-#         }
-
-#         with open(LOG_FILE, "a", encoding="utf-8") as f:
-#             json.dump(record, f, ensure_ascii=False)
-#             f.write("\n")
-
-#         logger.info(f"✅ Record saved to JSON: {record['session_id']}")
-
-#     # --- Start the session
-#     ctx.call_start = datetime.utcnow()
-#     await session.start(
-#         room=ctx.room,
-#         agent=agent,
-#         room_input_options=RoomInputOptions(),
-#     )
-
-#     # --- Background ambience + fillers
-#     global background_audio
-#     background_audio = BackgroundAudioPlayer(
-#         ambient_sound=AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.6),
-#         thinking_sound=[AudioConfig(f, volume=0.9) for f in FILLER_AUDIO],
-#     )
-#     await background_audio.start(room=ctx.room, agent_session=session)
-  
-
-#     # --- Greeting
-#     await session.say("Hi, I’m your Healthcare Assistant! How can I help you today?")
-
-# if __name__ == "__main__":
-#     cli.run_app(
-#         WorkerOptions(
-#             entrypoint_fnc=entrypoint,
-#             prewarm_fnc=prewarm,
-#         ),
-#     )
-
+    @function_tool()
+    async def handoff_to_aisystems(self, context: RunContext[UserContext]):
+        """Transfer the user to the AI Systems assistant."""
+        logger.info("Handing off to AISystemsAgent.")
+        aisystems_agent = AISystemsAgent()
+        return aisystems_agent, "Switching you to our AI Systems support assistant."

@@ -426,6 +426,15 @@ Used when the user asks about the status of a claim — e.g., “What is the sta
 **Returns:**  
 Details of the requested claim or all claims if no ID is specified.
 
+### 7. Handoff to Healthcare Agent
+
+### 8. Handoff to AISystems Agent
+
+### 9. Handoff to Airline Agent
+
+### 10. Handoff to Restaurant Agent
+ - If a user asks any questions related to menu items, making reservations, or placing order handoff the agent control to Restuarant Agent
+
 ---
 
 ## 🧠 Additional Behavior

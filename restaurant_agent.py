@@ -41,12 +41,63 @@ today = datetime.now().date()
 if not hasattr(RunContext, "session_data"):
     RunContext.session_data = {}
 
+# --------------------- Sample Conversation between the User and the Agent ------------------------
+"""
+🥇 1. Get Restaurant Info
+   - User: What are your opening hours?
+     Tool Called: get_restaurant_info(field="hours")
+     Agent Response: We’re open from 10 AM to 11 PM every day.
+
+   - User: Can you tell me your address and phone number?
+     Tool Called: get_restaurant_info()
+     Agent Response: We’re located at 12 Food Street, Karachi. You can reach us at +92 21 9876 5432.
+
+🥈 2. Browse Menu
+   - User: What’s on your menu?
+      Tool Called: browse_menu()
+      Agent Response:
+      We offer a wide range of dishes — from soups and salads to pizzas, burgers, and desserts.
+      Would you like me to tell you about a particular section?
+
+   - User: What desserts do you have?
+     Tool Called: browse_menu()
+     Agent Response:
+     Our desserts include Chocolate Lava Cake and Cheesecake. Both are delicious!
+
+🥉 3. Make Reservation
+   - User: I’d like to book a table for 2 people tonight at 8 PM.
+     Tool Called: make_reservation( request={ "name": "Sara Khan", "email": "sara.khan@example.com", "people": 2, "date": "2025-10-08", "time": "20:00"})
+     Agent Response:
+     I’ve found a table for two at 8 PM tonight.
+     Would you like me to confirm your reservation?
+
+   - User: Yes, please confirm it.
+     Tool Called: confirm_reservation()
+     Agent Response:
+     Your reservation is confirmed!
+     You’ll receive a confirmation email shortly. We look forward to serving you tonight.
+
+🍕 5. Place Order
+   - User: I’d like to order one Margherita pizza and a lemonade.
+     Tool Called: place_order(request={ "name": "Sara Khan", "email": "sara.khan@example.com", "items": [ {"item_name": "Margherita", "quantity": 1},{"item_name": "Lemonade", "quantity": 1}]})
+     Agent Response: That’s one Margherita pizza and a lemonade — your total comes to 1,400 rupees.
+     Would you like to confirm your order or add something else, like garlic bread?
+
+🏆 6. Confirm Order
+   - User: Yes, please confirm my order.
+     Tool Called: confirm_order()
+     Agent Response:
+     Your order has been confirmed!
+     You’ll receive a confirmation email shortly, and we’ll start preparing your food right away.
+
+"""
+
 # ------------------ SAMPLE RESTAURANT DATA ------------------
 RESTAURANT_INFO = {
     "name": "La Piazza Bistro",
     "address": "12 Food Street, Karachi, Pakistan",
     "phone": "+92 21 9876 5432",
-    "email": "syeda.maham.jafri.2024@gmail.com",
+    "email": "maham@theaisystems.com",
     "hours": {"open": dt_time(10, 0), "close": dt_time(23, 0)},  # 10 AM – 11 PM
 }
 
@@ -91,6 +142,31 @@ CLOSING_RE = re.compile(
     r"^\s*(bye|goodbye|see you|see ya|later|thanks|thank you|that's it|done)[\.\!\?]?\s*$",
     flags=re.IGNORECASE | re.UNICODE,
 )
+
+
+# ------------------ TABLE AVAILABILITY (Dummy Data) ------------------
+TABLE_AVAILABILITY = {
+    2: {  # tables for 2 people
+        "Table 1": {
+            "13:00": True, "14:00": False, "18:00": True, "19:00": False, "20:00": True, "21:00": False,},
+        "Table 2": {
+           "13:00": True, "14:00": True,"18:00": False, "19:00": False, "20:00": False, "21:00": True,},
+    },
+    4: {  # tables for 4 people
+        "Table 3": {
+            "13:00": True, "14:00": False, "18:00": True, "19:00": False, "20:00": True,},
+        "Table 4": {
+            "13:00": True, "14:00": True, "18:00": False, "19:00": True, "20:00": False, },
+    },
+    6: {  # tables for 6 people
+        "Table 5": {
+            "13:00": True, "14:00": True, "18:00": False, "19:00": True,}
+    },
+    10: {  # tables for 10 people
+        "Table 6": {
+            "13:00": True,"14:00": False,"18:00": True, "20:00": False, }
+    },
+}
 
 # ------------------ EMAIL UTILITY ------------------
 def send_email(to_email: str, subject: str, body: str):
@@ -149,6 +225,7 @@ class ReservationRequest(BaseModel):
             else:
                 raise ValueError("Reservation date cannot be in the past.")
         return v
+   
 
     @field_validator("time")
     def validate_time(cls, v):
@@ -165,8 +242,6 @@ class ReservationRequest(BaseModel):
             )
         return v
 
-
-
 class OrderItem(BaseModel):
     item_name: str
     quantity: int
@@ -182,6 +257,31 @@ class OrderRequest(BaseModel):
             raise ValueError("Name must contain only letters and spaces.")
         return v
 
+# ------------------ Helper Functions ----------------------------
+
+def find_available_table(people: int, requested_time: dt_time) -> dict:
+    """Check if any table for the given group size is available at the requested time."""
+    time_str = requested_time.strftime("%H:%M")
+
+    if people not in TABLE_AVAILABILITY:
+        return {"error": f"No tables configured for {people} people."}
+
+    tables = TABLE_AVAILABILITY[people]
+    available_tables = [t for t, slots in tables.items() if slots.get(time_str)]
+    if available_tables:
+        return {"available": True, "table": random.choice(available_tables)}
+
+    # If no exact time is available, suggest next available times
+    alternate_times = set()
+    for t, slots in tables.items():
+        for alt_time, available in slots.items():
+            if available:
+                alternate_times.add(alt_time)
+
+    return {
+        "available": False,
+        "alternatives": sorted(alternate_times),
+    }
 
 
 # ------------------ RESTAURANT AGENT ------------------
@@ -231,16 +331,34 @@ class RestaurantAgent(Agent):
         return MENU
 
     # -------- Make Reservation (Preview) --------
-    @function_tool()
+    @function_tool
     async def make_reservation(self, context: RunContext, request: ReservationRequest) -> dict:
+        """Handles reservation requests, checking table availability."""
         res_id = f"RES{random.randint(1000,9999)}"
-        slot_key = f"{request.date}-{request.time}"
+        slot_key = f"{request.date}-{request.time.strftime('%H:%M')}"
 
-        if slot_key in [r["slot"] for r in RESERVATIONS.values() if r["status"] == "confirmed"]:
-            return {"error": f"❌ Slot {slot_key} already booked. Please choose another time."}
+        # --- Check if table is available ---
+        availability = find_available_table(request.people, request.time)
 
+        if "error" in availability:
+            return {"error": availability["error"]}
+
+        if not availability["available"]:
+            alternatives = availability["alternatives"]
+            formatted_times = ", ".join(alternatives)
+            return {
+                "error": (
+                    f"Sorry, no tables for {request.people} people are available at {request.time.strftime('%I:%M %p')}.\n"
+                    f"However, we do have availability at these times: {formatted_times}.\n"
+                    "Would you like to choose one of these instead?"
+                )
+            }
+
+        # --- Proceed with booking preview if available ---
+        chosen_table = availability["table"]
         RESERVATIONS[res_id] = {
             "id": res_id,
+            "table": chosen_table,
             "slot": slot_key,
             "name": request.name,
             "email": request.email,
@@ -249,14 +367,48 @@ class RestaurantAgent(Agent):
         }
 
         summary = (
-            f"Reservation Preview (ID: {res_id})\n"
-            f"Name: {request.name}\n"
-            f"People: {request.people}\n"
-            f"Date: {request.date} at {request.time}\n\n"
-            f"Please confirm to finalize."
+            f"Here's your reservation preview:\n\n"
+            f"✅ **Table:** {chosen_table}\n"
+            f"**Reservation ID:** {res_id}\n"
+            f"**Name:** {request.name}\n"
+            f"**Number of People:** {request.people}\n"
+            f"**Date & Time:** {request.date.strftime('%B %d, %Y')} at {request.time.strftime('%I:%M %p')}\n\n"
+            f"Please confirm to finalize your reservation."
         )
+
         context.session_data["pending_reservation"] = RESERVATIONS[res_id]
-        return {"reservation_id": res_id, "summary": summary, "requires_confirmation": True}
+        return {
+            "reservation_id": res_id,
+            "summary": summary,
+            "requires_confirmation": True,
+        }
+
+    # @function_tool()
+    # async def make_reservation(self, context: RunContext, request: ReservationRequest) -> dict:
+    #     res_id = f"RES{random.randint(1000,9999)}"
+    #     slot_key = f"{request.date}-{request.time}"
+
+    #     if slot_key in [r["slot"] for r in RESERVATIONS.values() if r["status"] == "confirmed"]:
+    #         return {"error": f"❌ Slot {slot_key} already booked. Please choose another time."}
+
+    #     RESERVATIONS[res_id] = {
+    #         "id": res_id,
+    #         "slot": slot_key,
+    #         "name": request.name,
+    #         "email": request.email,
+    #         "people": request.people,
+    #         "status": "pending",
+    #     }
+
+    #     summary = (
+    #         f"Reservation Preview (ID: {res_id})\n"
+    #         f"Name: {request.name}\n"
+    #         f"People: {request.people}\n"
+    #         f"Date: {request.date} at {request.time}\n\n"
+    #         f"Please confirm to finalize."
+    #     )
+    #     context.session_data["pending_reservation"] = RESERVATIONS[res_id]
+    #     return {"reservation_id": res_id, "summary": summary, "requires_confirmation": True}
 
     # -------- Confirm Reservation --------
     @function_tool()
@@ -421,126 +573,33 @@ class RestaurantAgent(Agent):
         send_email(RESTAURANT_INFO["email"], "New Customer Order Received", msg)
 
         return msg
+   
+   #------------------------- Handoff Functions for Agents ----------------------------
+    @function_tool()
+    async def handoff_to_insurance(self, context: RunContext[UserContext]):
+        """Transfer the user to the insurance assistant."""
+        logger.info("Handing off to InsuranceAgent.")
+        insurance_agent = InsuranceAgent()
+        return insurance_agent, "Switching you to our insurance assistant."
 
-# -------------------- Agent lifecycle & entrypoint --------------------
-# def prewarm(proc: JobProcess):
-#     proc.userdata["vad"] = silero.VAD.load()
-#     # prewarm other resources if needed
+    @function_tool()
+    async def handoff_to_healthcare(self, context: RunContext[UserContext]):
+        """Transfer the user to the healthcare assistant."""
+        logger.info("Handing off to HealthcareAgent.")
+        healthcare_agent = HospitalAgent()
+        return healthcare_agent, "Switching you to our healthcare assistant."
 
-# async def entrypoint(ctx: JobContext):
-#     filler_task = None
-#     logger.info(f"connecting to room {ctx.room.name}")
-#     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
+    @function_tool()
+    async def handoff_to_airline(self, context: RunContext[UserContext]):
+        """Transfer the user to the airline assistant."""
+        logger.info("Handing off to AirlineAgent.")
+        airline_agent = AirlineAgent()
+        return airline_agent, "Switching you to our airline assistant."
 
-#     participant = await ctx.wait_for_participant()
-#     logger.info(f"starting airline voice assistant for participant {participant.identity}")
-
-#     session = AgentSession(
-#         vad=ctx.proc.userdata["vad"],
-#         min_endpointing_delay=0.9,
-#         max_endpointing_delay=5.0,
-#     )
-
-#     agent = RestaurantAgent()
-#     usage_collector = metrics.UsageCollector()
-#     conversation_log = []
-
-#     @session.on("metrics_collected")
-#     def on_agent_metrics(agent_metrics: metrics.AgentMetrics):
-#         usage_collector.collect(agent_metrics)
-
-#     @agent.llm.on("metrics_collected")
-#     def on_llm_metrics(llm_metrics: metrics.LLMMetrics):
-#         usage_collector.collect(llm_metrics)
-
-#     @agent.stt.on("metrics_collected")
-#     def on_stt_metrics(stt_metrics: metrics.STTMetrics):
-#         usage_collector.collect(stt_metrics)
-
-#     @agent.tts.on("metrics_collected")
-#     def on_tts_metrics(tts_metrics: metrics.TTSMetrics):
-#         usage_collector.collect(tts_metrics)
-
-#     # user message capture + filler scheduling
-#     @session.on("user_message")
-#     def on_user_message(msg):
-#         nonlocal filler_task
-#         if msg.text.strip():
-#             conversation_log.append({"role": "user", "text": msg.text, "timestamp": datetime.utcnow().isoformat()})
-#             text = msg.text.lower().strip()
-
-#             if not hasattr(session, "ending"):
-#                 session.ending = False
-
-#             if CLOSING_RE.match(text):
-#                 session.ending = True
-#                 if filler_task and not filler_task.done():
-#                     filler_task.cancel()
-#                     asyncio.create_task(background_audio.clear_thinking())
-#                 logger.info("Detected closing phrase; cancelling filler.")
-#                 return
-
-#             if session.ending:
-#                 logger.info("Session ending; suppressing filler.")
-#                 return
-
-#             async def delayed_filler():
-#                 await asyncio.sleep(1.0)
-#                 filler = get_random_filler()
-#                 if filler:
-#                     await background_audio.set_thinking([AudioConfig(filler, volume=0.9)])
-
-#             filler_task = asyncio.create_task(delayed_filler())
-
-#     @session.on("assistant_message")
-#     def on_assistant_message(msg):
-#         if msg.text.strip():
-#             conversation_log.append({"role": "assistant", "text": msg.text, "timestamp": datetime.utcnow().isoformat()})
-#         asyncio.create_task(background_audio.clear_thinking())
-
-#     @ctx.room.on("participant_connected")
-#     def on_connected(remote: rtc.RemoteParticipant):
-#         ctx.call_start = datetime.utcnow()
-#         logger.info("-------- Call Started -------")
-
-#     @ctx.room.on("participant_disconnected")
-#     def on_finished(remote: rtc.RemoteParticipant):
-#         call_start = getattr(ctx, "call_start", None)
-#         call_end = datetime.utcnow()
-#         duration_minutes = (call_end - call_start).total_seconds() / 60.0 if call_start else 0.0
-#         summary = usage_collector.get_summary()
-#         summary_dict = summary.__dict__ if hasattr(summary, "__dict__") else summary
-#         record = {
-#             "session_id": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
-#             "metrics": summary_dict,
-#             "duration_minutes": duration_minutes,
-#             "conversation": conversation_log,
-#         }
-#         with open(LOG_FILE, "a", encoding="utf-8") as f:
-#             json.dump(record, f, ensure_ascii=False)
-#             f.write("\n")
-#         logger.info(f"✅ Record saved to JSON: {record['session_id']}")
-
-#     # start session
-#     ctx.call_start = datetime.utcnow()
-#     await session.start(room=ctx.room, agent=agent, room_input_options=RoomInputOptions())
-
-#     # background audio and filler
-#     global background_audio
-#     background_audio = BackgroundAudioPlayer(
-#         ambient_sound=AudioConfig(BuiltinAudioClip.AIRPORT_AMBIENCE if hasattr(BuiltinAudioClip, "AIRPORT_AMBIENCE") else BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.5),
-#         thinking_sound=[AudioConfig(f, volume=0.9) for f in FILLER_AUDIO] if FILLER_AUDIO else [],
-#     )
-#     await background_audio.start(room=ctx.room, agent_session=session)
-
-#     # greeting
-#     await session.say(f"Welcome to La Piazza Bistro — I’m your virtual assistant. How can I help you with your food cravings today?")
-
-# if __name__ == "__main__":
-#     cli.run_app(
-#         WorkerOptions(
-#             entrypoint_fnc=entrypoint,
-#             prewarm_fnc=prewarm,
-#         ),
-#     )
+    @function_tool()
+    async def handoff_to_aisystems(self, context: RunContext[UserContext]):
+        """Transfer the user to the AI Systems assistant."""
+        logger.info("Handing off to AISystemsAgent.")
+        aisystems_agent = AISystemsAgent()
+        return aisystems_agent, "Switching you to our AI Systems support assistant."
 
