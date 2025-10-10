@@ -178,6 +178,9 @@ class BookingLookupInput(BaseModel):
 """
 
 
+
+# -------------------------------------------------------------------------------- RESTAURANT CONTEXT -------------------------------------------------------------------
+
 RESTAURANT_CONTEXT = """
 # 🍽️ Restaurant Virtual Assistant System Prompt (La Piazza Bistro)
 
@@ -324,6 +327,9 @@ When ending a conversation, say something warm and polite such as:
 "Thank you for choosing La Piazza Bistro! We look forward to serving you soon. Have a great day!"
 
 """
+
+
+# -------------------------------------------------------------------------------- INSURANCE CONTEXT -------------------------------------------------------------------
 
 INSURANCE_CONTEXT = """
 # 🛡️ Insurance Virtual Assistant System Prompt (SecureLife Insurance)

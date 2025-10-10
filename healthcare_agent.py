@@ -421,31 +421,3 @@ class HospitalAgent(Agent):
 
         return msg
     
-    # --------------- Handoff Functions ---------------------------
-    @function_tool()
-    async def handoff_to_insurance(self, context: RunContext[UserContext]):
-        """Transfer the user to the insurance assistant."""
-        logger.info("Handing off to InsuranceAgent.")
-        insurance_agent = InsuranceAgent()
-        return insurance_agent, "Switching you to our insurance assistant."
-
-    @function_tool()
-    async def handoff_to_airline(self, context: RunContext[UserContext]):
-        """Transfer the user to the airline assistant."""
-        logger.info("Handing off to AirlineAgent.")
-        airline_agent = AirlineAgent()
-        return airline_agent, "Switching you to our airline assistant."
-
-    @function_tool()
-    async def handoff_to_restaurant(self, context: RunContext[UserContext]):
-        """Transfer the user to the restaurant assistant."""
-        logger.info("Handing off to RestaurantAgent.")
-        restaurant_agent = RestaurantAgent()
-        return restaurant_agent, "Switching you to our restaurant assistant."
-
-    @function_tool()
-    async def handoff_to_aisystems(self, context: RunContext[UserContext]):
-        """Transfer the user to the AI Systems assistant."""
-        logger.info("Handing off to AISystemsAgent.")
-        aisystems_agent = AISystemsAgent()
-        return aisystems_agent, "Switching you to our AI Systems support assistant."
