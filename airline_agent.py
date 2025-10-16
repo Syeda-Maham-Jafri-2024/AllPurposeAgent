@@ -420,6 +420,7 @@ DUMMY_BOOKINGS = [
         "total_fare": "PKR 45,000",
         "date": str(datetime.now().date()),
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "status": "Confirmed",
     },
     {
         "booking_id": "BK10002",
@@ -432,6 +433,7 @@ DUMMY_BOOKINGS = [
         "total_fare": "PKR 290,000",
         "date": str(datetime.now().date() + timedelta(days=1)),
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "status": "Confirmed",
     },
     {
         "booking_id": "BK10003",
@@ -444,6 +446,7 @@ DUMMY_BOOKINGS = [
         "total_fare": "PKR 25,000",
         "date": str(datetime.now().date()),
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "status": "Cancelled",
     },
 ]
 

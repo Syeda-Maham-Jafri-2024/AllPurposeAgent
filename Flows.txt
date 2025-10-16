@@ -1,0 +1,41 @@
+Main Agent: ALL PURPOSE AGENT
+- Identifies that to which agent the use query belongs and handsoff the control to that particular agent
+
+Sub Agent:
+1. INSURANCE AGENT:
+ - Ask for available policies - health, travel, car, life, home
+ - Ask for company contact details - email, phone, location, office hours
+ - View user policies 
+ - View user payment history
+ - Check the status of your claim
+ - File a claim - provide the asked data - receive an email on confirmation
+
+ 2. AIRLINE AGENT:
+  - Ask for company contact details - email, phone, location, office hours
+  - Ask for Baggage Policy -  economy, business, first
+  - Search for flights - provide date, origin and destination to get the list of available flights
+  - Check flight status
+  - Book a flight - get confirmation email
+  - Check Booking Status - Confirmed / Cancelled
+  - Ask about cancellation and refund Policies
+
+ 3. HEALTHCARE AGENT:
+  - Get Hospital related details - email, phone, location, office hours
+  - Get details related to doctors 
+  - Get appointment status 
+
+
+ 4. RESTUARANT AGENT:
+  - Ask for restaurant contact details - email, phone, location, office hours
+  - Browse through menu products
+  - Make reservation for a table - receive confirmation email
+  - Place order for a food product - receive confirmation email
+
+
+ 5. AI SYSTEMS AGENT:
+ - Ask about company information - 
+ - Ask about company products
+ - Ask about company solutions
+ - Contact us form submission
+
+  
