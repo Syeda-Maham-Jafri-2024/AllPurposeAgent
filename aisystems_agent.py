@@ -50,41 +50,41 @@ CONTACT_INFO = {
     "office_hours": "Mon–Fri: 9:00 AM – 6:00 PM, Sat, Sun: Closed",
 }
 
- #     # --- Filler audio list (short clips, e.g. wav files)
+#     # --- Filler audio list (short clips, e.g. wav files)
 FILLER_AUDIO = [
-        "audio/filler_1.wav",
-        "audio/filler_2.wav",
-        "audio/filler_3.wav",
-        "audio/filler_4.wav",
-        "audio/filler_5.wav",
-        "audio/filler_6.wav",
-        "audio/filler_7.wav",
-        "audio/filler_8.wav",
-        "audio/filler_9.wav",
-        "audio/filler_10.wav",
-        "audio/filler_11.wav",
-        "audio/filler_12.wav",
-        "audio/filler_13.wav",
-        "audio/filler_14.wav",
-        "audio/filler_15.wav",
-        "audio/filler_16.wav",
-        "audio/filler_17.wav",
-        "audio/filler_18.wav",
-        "audio/filler_19.wav",
-        "audio/filler_20.wav",
-        "audio/filler_21.wav",
-        "audio/filler_22.wav",
-        "audio/filler_23.wav",
-        "audio/filler_24.wav",
-        "audio/filler_25.wav",
-        "audio/filler_26.wav",
-        "audio/filler_27.wav",
-        "audio/filler_28.wav",
-        "audio/filler_29.wav",
-        "audio/filler_30.wav",
-        "audio/filler_31.wav",
-        "audio/filler_32.wav",
-    ]
+    "audio/filler_1.wav",
+    "audio/filler_2.wav",
+    "audio/filler_3.wav",
+    "audio/filler_4.wav",
+    "audio/filler_5.wav",
+    "audio/filler_6.wav",
+    "audio/filler_7.wav",
+    "audio/filler_8.wav",
+    "audio/filler_9.wav",
+    "audio/filler_10.wav",
+    "audio/filler_11.wav",
+    "audio/filler_12.wav",
+    "audio/filler_13.wav",
+    "audio/filler_14.wav",
+    "audio/filler_15.wav",
+    "audio/filler_16.wav",
+    "audio/filler_17.wav",
+    "audio/filler_18.wav",
+    "audio/filler_19.wav",
+    "audio/filler_20.wav",
+    "audio/filler_21.wav",
+    "audio/filler_22.wav",
+    "audio/filler_23.wav",
+    "audio/filler_24.wav",
+    "audio/filler_25.wav",
+    "audio/filler_26.wav",
+    "audio/filler_27.wav",
+    "audio/filler_28.wav",
+    "audio/filler_29.wav",
+    "audio/filler_30.wav",
+    "audio/filler_31.wav",
+    "audio/filler_32.wav",
+]
 
 CLOSING_RE = re.compile(
     r"^\s*(bye|goodbye|see you|see ya|later|thanks(?:\s+all)?|thank you|that's it|that is all|no that's all|talk soon|i'm done|done)[\.\!\?]?\s*$",
@@ -96,6 +96,7 @@ LOG_FILE = "aisystems_session_summary.json"
 # ====== Pydantic models for the Agent ======
 from pydantic import BaseModel, EmailStr, field_validator
 import re
+
 
 class ContactRequest(BaseModel):
     name: str
@@ -170,9 +171,11 @@ def send_email(to_email: str, subject: str, body: str) -> bool:
         logger.error(f"Failed to send email to {to_email}: {e}")
         return False
 
+
 def get_random_filler():
     """Pick one random filler audio from the list."""
     return random.choice(FILLER_AUDIO)
+
 
 # ----------------------------------- AGENT CLASS -----------------------------------
 
@@ -184,7 +187,7 @@ class AISystemsAgent(Agent):
             language="en",
             prompt="ALways transcribe in English or Urdu",
         )
-        llm_inst = openai.LLM(model="gpt-4o")
+        llm_inst = openai.LLM(model="gpt-4.1")
         tts = openai.TTS(model="gpt-4o-mini-tts", voice=voice)
         silero_vad = silero.VAD.load()
 
@@ -197,8 +200,7 @@ class AISystemsAgent(Agent):
             vad=silero_vad,
             allow_interruptions=True,
         )
-    
-    
+
     # ------------------ FLOW 1: Company Info ------------------
     @function_tool()
     async def get_company_info(self, query: str, context: RunContext) -> str:
@@ -588,4 +590,3 @@ class AISystemsAgent(Agent):
         logger.info(f"Selected Product Section: {result}")
 
         return result
-    

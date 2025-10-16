@@ -45,11 +45,6 @@ class AllPurposeAgent(Agent):
     def __init__(self):
         super().__init__(instructions=ALL_PURPOSE_CONTEXT)
 
-    # async def on_enter(self):
-    #     await self.session.generate_reply(
-    #         instructions="Hi, I’m your All Purpose Agent Assistant! How can I help you today?"
-    #     )
-
     # ------------------------ HANDOFF FUNCTIONS ------------------------
 
     @function_tool()
@@ -72,6 +67,7 @@ class AllPurposeAgent(Agent):
         logger.info("Handing off to AirlineAgent.")
         airline_agent = AirlineAgent()
         return airline_agent
+
     @function_tool()
     async def handoff_to_restaurant(self, context: RunContext[UserContext]):
         """Transfer the user to the restaurant assistant."""
@@ -86,7 +82,9 @@ class AllPurposeAgent(Agent):
         aisystems_agent = AISystemsAgent()
         return aisystems_agent
 
+
 # ------------------------ ENTRYPOINT + PREWARM ------------------------
+
 
 def prewarm(proc: JobProcess):
     proc.userdata["vad"] = silero.VAD.load()
@@ -97,7 +95,7 @@ async def entrypoint(ctx: JobContext):
 
     session = AgentSession[UserContext](
         vad=silero.VAD.load(),
-        llm=openai.LLM(model="gpt-4o"),
+        llm=openai.LLM(model="gpt-4.1"),
         stt=openai.STT(
             model="gpt-4o-transcribe",
             language="en",
@@ -127,7 +125,7 @@ async def entrypoint(ctx: JobContext):
         room_output_options=RoomOutputOptions(transcription_enabled=True),
     )
 
-    await session.say("Hi, I’m your AI Assistant ! How can I help you today?")
+    await session.say("Hi, I’m your AI Assistant! How can I help you today?")
 
 
 if __name__ == "__main__":

@@ -6,10 +6,13 @@ import os
 from pathlib import Path
 import random
 from datetime import datetime
+import dateparser
 import re
 from typing import Optional, List
 from dotenv import load_dotenv
+from livekit.agents import MetricsCollectedEvent
 from context import AIRLINE_CONTEXT
+
 # OpenAI client(s)
 from openai import OpenAI
 
@@ -25,6 +28,7 @@ from livekit.agents import (
     cli,
     AutoSubscribe,
     RoomInputOptions,
+    RoomOutputOptions,
 )
 from livekit.agents import metrics
 from livekit.plugins import openai, silero
@@ -163,29 +167,227 @@ AIRLINE_INFO = {
 
 # Dummy flight schedules (daily)
 DUMMY_FLIGHTS = [
-    {"flight_number": "SB101","origin": "KHI","destination": "DXB","departure": "08:00","arrival": "10:00","duration": "2h 00m","fare": "PKR 45,000","gate": "A12","terminal": "T1","status": "On Time", "date": str(today),},
-    {"flight_number": "SB202","origin": "KHI","destination": "LHR","departure": "14:30","arrival": "19:30","duration": "7h 00m","fare": "PKR 145,000","gate": "B3","terminal": "T2", "status": "Delayed 30 minutes due to weather","date": str(today + timedelta(days=1)),},
-    {"flight_number": "SB303","origin": "LHE","destination": "IST","departure": "09:00","arrival": "13:00","duration": "4h 00m","fare": "PKR 85,000","gate": "C5","terminal": "T1","status": "Departed", "date": str(today + timedelta(days=2)), },
-    {"flight_number": "SB404","origin": "ISB","destination": "JED","departure": "06:00","arrival": "09:30","duration": "3h 30m","fare": "PKR 70,000","gate": "D9","terminal": "T3","status": "Cancelled due to technical reasons","date": str(today), },
-    {"flight_number": "SB505","origin": "DXB","destination": "KHI","departure": "22:00","arrival": "00:30","duration": "2h 30m","fare": "PKR 48,000","gate": "E2","terminal": "T1","status": "Boarding in progress","date": str(today + timedelta(days=1)),},
-    {"flight_number": "SB606","origin": "KHI","destination": "DOH","departure": "11:00","arrival": "12:45","duration": "1h 45m","fare": "PKR 55,000","gate": "A5","terminal": "T2","status": "On Time","date": str(today),},
-    {"flight_number": "SB707","origin": "LHE","destination": "DXB","departure": "16:00","arrival": "18:00","duration": "2h 00m", "fare": "PKR 49,500","gate": "C7","terminal": "T1","status": "On Time","date": str(today + timedelta(days=3)),},
-    {"flight_number": "SB808","origin": "ISB","destination": "KUL","departure": "01:30","arrival": "10:00","duration": "6h 30m","fare": "PKR 120,000","gate": "D2","terminal": "T3","status": "On Time", "date": str(today + timedelta(days=2)),},
-    {"flight_number": "SB909","origin": "KHI","destination": "ISB","departure": "12:15","arrival": "13:45","duration": "1h 30m","fare": "PKR 25,000","gate": "A1","terminal": "T1","status": "On Time","date": str(today),},
-    {"flight_number": "SB010","origin": "LHE","destination": "KHI","departure": "18:45","arrival": "20:15","duration": "1h 30m","fare": "PKR 24,000","gate": "C4","terminal": "T1","status": "Delayed 15 minutes due to traffic","date": str(today + timedelta(days=4)),},
-    {"flight_number": "SB111","origin": "DXB","destination": "LHE","departure": "03:00","arrival": "07:00","duration": "4h 00m","fare": "PKR 50,000","gate": "E8","terminal": "T2","status": "Boarding soon","date": str(today + timedelta(days=1)),},
-    {"flight_number": "SB212","origin": "KHI","destination": "DEL","departure": "10:00","arrival": "11:15","duration": "1h 15m","fare": "PKR 40,000","gate": "B6","terminal": "T1","status": "On Time",  "date": str(today + timedelta(days=2)),},
-    {"flight_number": "SB313","origin": "ISB", "destination": "PEK","departure": "20:00","arrival": "04:30","duration": "6h 30m", "fare": "PKR 155,000","gate": "D11","terminal": "T3","status": "On Time","date": str(today + timedelta(days=3)),},
-    {"flight_number": "SB414","origin": "LHE","destination": "BOM","departure": "07:00","arrival": "08:15","duration": "1h 15m","fare": "PKR 42,000","gate": "C2","terminal": "T2","status": "Departed","date": str(today),},
-    {"flight_number": "SB515","origin": "KHI","destination": "MCT","departure": "05:30","arrival": "07:15","duration": "1h 45m","fare": "PKR 52,000","gate": "A9","terminal": "T1", "status": "On Time", "date": str(today + timedelta(days=1)),},
+    {
+        "flight_number": "SB101",
+        "origin": "KHI",
+        "destination": "DXB",
+        "departure": "08:00",
+        "arrival": "10:00",
+        "duration": "2h 00m",
+        "fare": "PKR 45,000",
+        "gate": "A12",
+        "terminal": "T1",
+        "status": "On Time",
+        "date": (today).strftime("%Y-%m-%d"),
+    },
+    {
+        "flight_number": "SB202",
+        "origin": "KHI",
+        "destination": "LHR",
+        "departure": "14:30",
+        "arrival": "19:30",
+        "duration": "7h 00m",
+        "fare": "PKR 145,000",
+        "gate": "B3",
+        "terminal": "T2",
+        "status": "Delayed 30 minutes due to weather",
+        "date": (today + timedelta(days=1)).strftime("%Y-%m-%d"),
+    },
+    {
+        "flight_number": "SB303",
+        "origin": "LHE",
+        "destination": "IST",
+        "departure": "09:00",
+        "arrival": "13:00",
+        "duration": "4h 00m",
+        "fare": "PKR 85,000",
+        "gate": "C5",
+        "terminal": "T1",
+        "status": "Departed",
+        "date": (today + timedelta(days=2)).strftime("%Y-%m-%d"),
+    },
+    {
+        "flight_number": "SB404",
+        "origin": "ISB",
+        "destination": "JED",
+        "departure": "06:00",
+        "arrival": "09:30",
+        "duration": "3h 30m",
+        "fare": "PKR 70,000",
+        "gate": "D9",
+        "terminal": "T3",
+        "status": "Cancelled due to technical reasons",
+        "date": (today).strftime("%Y-%m-%d"),
+    },
+    {
+        "flight_number": "SB505",
+        "origin": "DXB",
+        "destination": "KHI",
+        "departure": "22:00",
+        "arrival": "00:30",
+        "duration": "2h 30m",
+        "fare": "PKR 48,000",
+        "gate": "E2",
+        "terminal": "T1",
+        "status": "Boarding in progress",
+        "date": (today + timedelta(days=1)).strftime("%Y-%m-%d"),
+    },
+    {
+        "flight_number": "SB606",
+        "origin": "KHI",
+        "destination": "DOH",
+        "departure": "11:00",
+        "arrival": "12:45",
+        "duration": "1h 45m",
+        "fare": "PKR 55,000",
+        "gate": "A5",
+        "terminal": "T2",
+        "status": "On Time",
+        "date": (today).strftime("%Y-%m-%d"),
+    },
+    {
+        "flight_number": "SB707",
+        "origin": "LHE",
+        "destination": "DXB",
+        "departure": "16:00",
+        "arrival": "18:00",
+        "duration": "2h 00m",
+        "fare": "PKR 49,500",
+        "gate": "C7",
+        "terminal": "T1",
+        "status": "On Time",
+        "date": (today + timedelta(days=3)).strftime("%Y-%m-%d"),
+    },
+    {
+        "flight_number": "SB808",
+        "origin": "ISB",
+        "destination": "KUL",
+        "departure": "01:30",
+        "arrival": "10:00",
+        "duration": "6h 30m",
+        "fare": "PKR 120,000",
+        "gate": "D2",
+        "terminal": "T3",
+        "status": "On Time",
+        "date": (today + timedelta(days=2)).strftime("%Y-%m-%d"),
+    },
+    {
+        "flight_number": "SB909",
+        "origin": "KHI",
+        "destination": "ISB",
+        "departure": "12:15",
+        "arrival": "13:45",
+        "duration": "1h 30m",
+        "fare": "PKR 25,000",
+        "gate": "A1",
+        "terminal": "T1",
+        "status": "On Time",
+        "date": (today).strftime("%Y-%m-%d"),
+    },
+    {
+        "flight_number": "SB010",
+        "origin": "LHE",
+        "destination": "KHI",
+        "departure": "18:45",
+        "arrival": "20:15",
+        "duration": "1h 30m",
+        "fare": "PKR 24,000",
+        "gate": "C4",
+        "terminal": "T1",
+        "status": "Delayed 15 minutes due to traffic",
+        "date": (today + timedelta(days=4)).strftime("%Y-%m-%d"),
+    },
+    {
+        "flight_number": "SB111",
+        "origin": "DXB",
+        "destination": "LHE",
+        "departure": "03:00",
+        "arrival": "07:00",
+        "duration": "4h 00m",
+        "fare": "PKR 50,000",
+        "gate": "E8",
+        "terminal": "T2",
+        "status": "Boarding soon",
+        "date": (today + timedelta(days=1)).strftime("%Y-%m-%d"),
+    },
+    {
+        "flight_number": "SB212",
+        "origin": "KHI",
+        "destination": "DEL",
+        "departure": "10:00",
+        "arrival": "11:15",
+        "duration": "1h 15m",
+        "fare": "PKR 40,000",
+        "gate": "B6",
+        "terminal": "T1",
+        "status": "On Time",
+        "date": (today + timedelta(days=2)).strftime("%Y-%m-%d"),
+    },
+    {
+        "flight_number": "SB313",
+        "origin": "ISB",
+        "destination": "PEK",
+        "departure": "20:00",
+        "arrival": "04:30",
+        "duration": "6h 30m",
+        "fare": "PKR 155,000",
+        "gate": "D11",
+        "terminal": "T3",
+        "status": "On Time",
+        "date": (today + timedelta(days=3)).strftime("%Y-%m-%d"),
+    },
+    {
+        "flight_number": "SB414",
+        "origin": "LHE",
+        "destination": "BOM",
+        "departure": "07:00",
+        "arrival": "08:15",
+        "duration": "1h 15m",
+        "fare": "PKR 42,000",
+        "gate": "C2",
+        "terminal": "T2",
+        "status": "Departed",
+        "date": (today).strftime("%Y-%m-%d"),
+    },
+    {
+        "flight_number": "SB515",
+        "origin": "KHI",
+        "destination": "MCT",
+        "departure": "05:30",
+        "arrival": "07:15",
+        "duration": "1h 45m",
+        "fare": "PKR 52,000",
+        "gate": "A9",
+        "terminal": "T1",
+        "status": "On Time",
+        "date": (today + timedelta(days=1)).strftime("%Y-%m-%d"),
+    },
 ]
-
 
 # Dummy loyalty members
 DUMMY_LOYALTY_MEMBERS = {
-    "SB12345": {"tier": "Silver", "miles_balance": 12450, "valid_until": "2026-03-01", "benefits": ["Priority check-in", "Extra baggage allowance"]},
-    "SB67890": {"tier": "Gold", "miles_balance": 30200, "valid_until": "2026-09-15", "benefits": ["Lounge access", "Free seat upgrades", "Priority boarding"]},
-    "SB99999": {"tier": "Platinum", "miles_balance": 78000, "valid_until": "2027-01-10", "benefits": ["First-class upgrades", "Personal travel assistant", "Unlimited lounge access"]},
+    "SB12345": {
+        "tier": "Silver",
+        "miles_balance": 12450,
+        "valid_until": "2026-03-01",
+        "benefits": ["Priority check-in", "Extra baggage allowance"],
+    },
+    "SB67890": {
+        "tier": "Gold",
+        "miles_balance": 30200,
+        "valid_until": "2026-09-15",
+        "benefits": ["Lounge access", "Free seat upgrades", "Priority boarding"],
+    },
+    "SB99999": {
+        "tier": "Platinum",
+        "miles_balance": 78000,
+        "valid_until": "2027-01-10",
+        "benefits": [
+            "First-class upgrades",
+            "Personal travel assistant",
+            "Unlimited lounge access",
+        ],
+    },
 }
 
 # Dummy baggage rules
@@ -193,7 +395,7 @@ DUMMY_BAGGAGE = {
     "economy": "1 checked bag up to 23kg + 1 carry-on bag (7kg)",
     "premium economy": "2 checked bags up to 23kg each + 1 carry-on bag (7kg)",
     "business": "2 checked bags up to 32kg each + 1 carry-on bag (10kg)",
-    "first": "3 checked bags up to 32kg each + 2 carry-on bags (12kg total)"
+    "first": "3 checked bags up to 32kg each + 2 carry-on bags (12kg total)",
 }
 
 # Dummy cancellation policies
@@ -207,17 +409,79 @@ DUMMY_CANCELLATION_POLICY = (
 from datetime import datetime, timedelta, timezone
 
 DUMMY_BOOKINGS = [
-    {"booking_id": "BK10001", "passenger": "Ali Raza","email": "ali.raza@example.com","flight_number": "SB101","route": "KHI → DXB","seat_class": "Economy","num_passengers": 1,"total_fare": "PKR 45,000","date": str(datetime.now().date()),"timestamp": datetime.now(timezone.utc).isoformat(),},
-    {"booking_id": "BK10002","passenger": "Sara Khan","email": "sara.khan@example.com","flight_number": "SB202","route": "KHI → LHR","seat_class": "Business","num_passengers": 2,"total_fare": "PKR 290,000","date": str(datetime.now().date() + timedelta(days=1)),"timestamp": datetime.now(timezone.utc).isoformat(),},
-    {"booking_id": "BK10003","passenger": "Zain Ahmed","email": "zain.ahmed@example.com","flight_number": "SB909","route": "KHI → ISB", "seat_class": "Economy","num_passengers": 1,"total_fare": "PKR 25,000","date": str(datetime.now().date()),"timestamp": datetime.now(timezone.utc).isoformat(),},
+    {
+        "booking_id": "BK10001",
+        "passenger": "Ali Raza",
+        "email": "ali.raza@example.com",
+        "flight_number": "SB101",
+        "route": "KHI → DXB",
+        "seat_class": "Economy",
+        "num_passengers": 1,
+        "total_fare": "PKR 45,000",
+        "date": str(datetime.now().date()),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    },
+    {
+        "booking_id": "BK10002",
+        "passenger": "Sara Khan",
+        "email": "sara.khan@example.com",
+        "flight_number": "SB202",
+        "route": "KHI → LHR",
+        "seat_class": "Business",
+        "num_passengers": 2,
+        "total_fare": "PKR 290,000",
+        "date": str(datetime.now().date() + timedelta(days=1)),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    },
+    {
+        "booking_id": "BK10003",
+        "passenger": "Zain Ahmed",
+        "email": "zain.ahmed@example.com",
+        "flight_number": "SB909",
+        "route": "KHI → ISB",
+        "seat_class": "Economy",
+        "num_passengers": 1,
+        "total_fare": "PKR 25,000",
+        "date": str(datetime.now().date()),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    },
 ]
 
- #     # --- Filler audio list (short clips, e.g. wav files)
+#     # --- Filler audio list (short clips, e.g. wav files)
 FILLER_AUDIO = [
-        "audio/filler_1.wav", "audio/filler_2.wav", "audio/filler_3.wav", "audio/filler_4.wav", "audio/filler_5.wav", "audio/filler_6.wav", "audio/filler_7.wav", "audio/filler_8.wav",
-        "audio/filler_9.wav","audio/filler_10.wav","audio/filler_11.wav","audio/filler_12.wav","audio/filler_13.wav","audio/filler_14.wav","audio/filler_15.wav","audio/filler_16.wav",
-        "audio/filler_17.wav","audio/filler_18.wav","audio/filler_19.wav","audio/filler_20.wav","audio/filler_21.wav","audio/filler_22.wav","audio/filler_23.wav","audio/filler_24.wav",
-        "audio/filler_25.wav","audio/filler_26.wav","audio/filler_27.wav","audio/filler_28.wav","audio/filler_29.wav","audio/filler_30.wav","audio/filler_31.wav","audio/filler_32.wav",]
+    "audio/filler_1.wav",
+    "audio/filler_2.wav",
+    "audio/filler_3.wav",
+    "audio/filler_4.wav",
+    "audio/filler_5.wav",
+    "audio/filler_6.wav",
+    "audio/filler_7.wav",
+    "audio/filler_8.wav",
+    "audio/filler_9.wav",
+    "audio/filler_10.wav",
+    "audio/filler_11.wav",
+    "audio/filler_12.wav",
+    "audio/filler_13.wav",
+    "audio/filler_14.wav",
+    "audio/filler_15.wav",
+    "audio/filler_16.wav",
+    "audio/filler_17.wav",
+    "audio/filler_18.wav",
+    "audio/filler_19.wav",
+    "audio/filler_20.wav",
+    "audio/filler_21.wav",
+    "audio/filler_22.wav",
+    "audio/filler_23.wav",
+    "audio/filler_24.wav",
+    "audio/filler_25.wav",
+    "audio/filler_26.wav",
+    "audio/filler_27.wav",
+    "audio/filler_28.wav",
+    "audio/filler_29.wav",
+    "audio/filler_30.wav",
+    "audio/filler_31.wav",
+    "audio/filler_32.wav",
+]
 
 CLOSING_RE = re.compile(
     r"^\s*(bye|goodbye|see you|see ya|later|thanks|thank you|that's it|done)[\.\!\?]?\s*$",
@@ -230,38 +494,62 @@ LOG_FILE = "airline_session_summary.json"
 from pydantic import BaseModel, Field
 from typing import Optional
 
+
 class FlightStatusInput(BaseModel):
     flight_number: Optional[str] = Field(None, description="Flight number like SB101")
     origin: Optional[str] = Field(None, description="Origin airport code like KHI")
-    destination: Optional[str] = Field(None, description="Destination airport code like DXB")
+    destination: Optional[str] = Field(
+        None, description="Destination airport code like DXB"
+    )
     date: Optional[str] = Field(None, description="Date of flight in YYYY-MM-DD format")
+
 
 class FlightSearchInput(BaseModel):
     location: Optional[str] = Field(None, description="City or airport to search from")
     origin: Optional[str] = Field(None, description="Origin airport code like KHI")
-    destination: Optional[str] = Field(None, description="Destination airport code like DXB")
-    date: Optional[str] = Field(None, description="Flight date in YYYY-MM-DD format")
+    destination: Optional[str] = Field(
+        None, description="Destination airport code like DXB"
+    )
+    # date: Optional[str] = Field(None, description="Flight date in YYYY-MM-DD format")
+    date: Optional[str] = Field(
+        None,
+        description="Date of travel (accepts phrases like 'tomorrow', 'next Monday', 'Oct 20', etc.)",
+    )
 
 
 class BookingLookupInput(BaseModel):
-    booking_id: Optional[str] = Field(None, description="Booking ID assigned during flight reservation (e.g., BK12345)")
-    email: Optional[EmailStr] = Field(None, description="Email address used at the time of booking")
+    booking_id: Optional[str] = Field(
+        None,
+        description="Booking ID assigned during flight reservation (e.g., BK12345)",
+    )
+    email: Optional[EmailStr] = Field(
+        None, description="Email address used at the time of booking"
+    )
 
     @model_validator(mode="after")
     def at_least_one(cls, values):
         if not values.booking_id and not values.email:
-            raise ValueError("Either booking_id or email must be provided to look up a booking.")
+            raise ValueError(
+                "Either booking_id or email must be provided to look up a booking."
+            )
         return values
 
 
 class FlightBookingInput(BaseModel):
     full_name: str = Field(..., description="Passenger full name as per passport")
-    email: EmailStr = Field(..., description="Valid email address to send booking confirmation")
+    email: EmailStr = Field(
+        ..., description="Valid email address to send booking confirmation"
+    )
     flight_number: str = Field(..., description="Selected flight number (e.g., SB101)")
-    num_passengers: int = Field(..., gt=0, le=9, description="Number of passengers to book, 1–9")
-    seat_class: str = Field(..., description="Travel class such as economy, business, or first")
-    confirm: Optional[bool] = Field(False, description="True to confirm booking after preview")
-
+    num_passengers: int = Field(
+        ..., gt=0, le=9, description="Number of passengers to book, 1–9"
+    )
+    seat_class: str = Field(
+        ..., description="Travel class such as economy, business, or first"
+    )
+    confirm: Optional[bool] = Field(
+        False, description="True to confirm booking after preview"
+    )
 
 
 # -------------------- Helper utilities --------------------
@@ -291,6 +579,7 @@ def send_email(to_email: str, subject: str, body: str) -> bool:
         logger.error(f"Failed to send email to {to_email}: {e}")
         return False
 
+
 def get_random_filler():
     return random.choice(FILLER_AUDIO) if FILLER_AUDIO else None
 
@@ -301,7 +590,7 @@ class AirlineAgent(Agent):
         stt = openai.STT(
             model="gpt-4o-transcribe",
             language="en",
-            prompt="Always transcribe in English or Urdu"
+            prompt="Always transcribe in English or Urdu",
         )
         llm_inst = openai.LLM(model="gpt-4o")
         tts = openai.TTS(model="gpt-4o-mini-tts", voice=voice)
@@ -314,6 +603,11 @@ class AirlineAgent(Agent):
             tts=tts,
             vad=silero_vad,
             allow_interruptions=True,
+        )
+
+    async def on_enter(self):
+        await self.session.say(
+            "Welcome to Sky Bridge Airlines! How can I assist you today?"
         )
 
     # ---------------- Flow: Flight Status ----------------
@@ -355,12 +649,14 @@ class AirlineAgent(Agent):
 
         if flight_info.flight_number:
             matched_flights = [
-                f for f in DUMMY_FLIGHTS
+                f
+                for f in DUMMY_FLIGHTS
                 if f["flight_number"].lower() == flight_info.flight_number.lower()
             ]
         elif flight_info.origin and flight_info.destination:
             matched_flights = [
-                f for f in DUMMY_FLIGHTS
+                f
+                for f in DUMMY_FLIGHTS
                 if f["origin"].lower() == flight_info.origin.lower()
                 and f["destination"].lower() == flight_info.destination.lower()
                 and (not flight_info.date or f["date"] == flight_info.date)
@@ -381,7 +677,6 @@ class AirlineAgent(Agent):
             "date": flight["date"],
         }
 
-
     # ------------------ Flight Search ------------------
     @function_tool()
     async def search_flights(
@@ -390,51 +685,50 @@ class AirlineAgent(Agent):
         context: RunContext = None,
     ) -> dict:
         """
-        Situation:
-            Called when the user wants to explore or browse available flights.
-            The query may include location, origin, destination, and/or date.
-            Searches dummy flight data to return a list of matching results.
-
-        Args:
-            context (RunContext): Conversation context provided by LiveKit.
-            search_info (FlightSearchInput): Validated input containing
-                search parameters such as location, origin, destination, or date.
-
-        Returns:
-            dict: {
-                "message": str,           # Summary of results
-                "flights": [              # List of matching flights
-                    {
-                        "flight_number": str,
-                        "route": str,      # e.g., "KHI → DXB"
-                        "departure": str,
-                        "arrival": str,
-                        "fare": str,       # e.g., "PKR 45,000"
-                        "date": str,
-                        "status": str
-                    },
-                    ...
-                ]
-            }
-            or
-            {"message": "No flights found for your search."}
+        Enhanced version — searches flights even when date is None,
+        and supports both city names and airport codes.
         """
         logger.info(f"🔍 Searching flights: {search_info}")
 
+        city_to_code = {
+            "karachi": "khi",
+            "lahore": "lhe",
+            "islamabad": "isb",
+            "dubai": "dxb",
+            "doha": "doh",
+            "jeddah": "jed",
+            "riyadh": "ruh",
+        }
+
         location = search_info.location.lower() if search_info.location else None
         origin = search_info.origin.lower() if search_info.origin else None
-        destination = search_info.destination.lower() if search_info.destination else None
+        destination = (
+            search_info.destination.lower() if search_info.destination else None
+        )
         date = search_info.date
+
+        # Auto-convert city names to airport codes if applicable
+        if origin in city_to_code:
+            origin = city_to_code[origin]
+        if destination in city_to_code:
+            destination = city_to_code[destination]
 
         matched_flights = []
         for flight in DUMMY_FLIGHTS:
+            # Skip date filtering if it's None
             if date and flight["date"] != date:
                 continue
             if location:
-                if location in (flight["origin"].lower(), flight["destination"].lower()):
+                if location in (
+                    flight["origin"].lower(),
+                    flight["destination"].lower(),
+                ):
                     matched_flights.append(flight)
             elif origin and destination:
-                if flight["origin"].lower() == origin and flight["destination"].lower() == destination:
+                if (
+                    flight["origin"].lower() == origin
+                    and flight["destination"].lower() == destination
+                ):
                     matched_flights.append(flight)
             elif origin:
                 if flight["origin"].lower() == origin:
@@ -444,7 +738,7 @@ class AirlineAgent(Agent):
                     matched_flights.append(flight)
 
         if not matched_flights:
-            return {"message": f"No flights found for your search."}
+            return {"message": "No flights found for your search."}
 
         return {
             "message": f"Found {len(matched_flights)} flights.",
@@ -482,7 +776,7 @@ class AirlineAgent(Agent):
                 passenger and flight details along with confirmation status.
 
         Returns:
-            dict: 
+            dict:
                 When confirm=False (preview stage):
                     {
                         "booking_preview": {
@@ -506,14 +800,18 @@ class AirlineAgent(Agent):
                         "email_sent": bool
                     }
 
-                or 
+                or
                     {"error": "Invalid flight number or booking data."}
         """
         logger.info(f"🧾 Booking flight: {booking_info}")
 
         # Find the flight
         flight = next(
-            (f for f in DUMMY_FLIGHTS if f["flight_number"].lower() == booking_info.flight_number.lower()),
+            (
+                f
+                for f in DUMMY_FLIGHTS
+                if f["flight_number"].lower() == booking_info.flight_number.lower()
+            ),
             None,
         )
         if not flight:
@@ -577,14 +875,16 @@ class AirlineAgent(Agent):
         )
 
         # Send confirmation email
-        email_status = send_email(booking_info.email, f"Booking Confirmation - {booking_id}", email_body)
+        email_status = send_email(
+            booking_info.email, f"Booking Confirmation - {booking_id}", email_body
+        )
 
         return {
             "booking_id": booking_id,
             "message": f"Booking confirmed for {booking_info.full_name}. Confirmation sent via email.",
             "email_sent": email_status,
         }
-    
+
     # ---------------- Flow: View Booking Status --------------------
     @function_tool()
     async def view_booking_status(
@@ -627,12 +927,20 @@ class AirlineAgent(Agent):
 
         if lookup.booking_id:
             matched_booking = next(
-                (b for b in DUMMY_BOOKINGS if b["booking_id"].lower() == lookup.booking_id.lower()),
+                (
+                    b
+                    for b in DUMMY_BOOKINGS
+                    if b["booking_id"].lower() == lookup.booking_id.lower()
+                ),
                 None,
             )
         elif lookup.email:
             matched_booking = next(
-                (b for b in DUMMY_BOOKINGS if b["email"].lower() == lookup.email.lower()),
+                (
+                    b
+                    for b in DUMMY_BOOKINGS
+                    if b["email"].lower() == lookup.email.lower()
+                ),
                 None,
             )
 
@@ -641,7 +949,12 @@ class AirlineAgent(Agent):
 
         # Get flight status if available
         flight = next(
-            (f for f in DUMMY_FLIGHTS if f["flight_number"].lower() == matched_booking["flight_number"].lower()),
+            (
+                f
+                for f in DUMMY_FLIGHTS
+                if f["flight_number"].lower()
+                == matched_booking["flight_number"].lower()
+            ),
             None,
         )
 
@@ -662,7 +975,6 @@ class AirlineAgent(Agent):
 
         logger.info(f"✅ Booking found: {booking_status}")
         return booking_status
-
 
     # ---------------- Flow: Baggage allowance policies ----------------
     @function_tool()
@@ -704,7 +1016,9 @@ class AirlineAgent(Agent):
             if key in DUMMY_BAGGAGE:
                 return {"seat_class": key.title(), "allowance": DUMMY_BAGGAGE[key]}
             else:
-                return {"error": "Invalid seat class. Please specify economy, premium economy, business, or first."}
+                return {
+                    "error": "Invalid seat class. Please specify economy, premium economy, business, or first."
+                }
 
         # General overview
         return {
@@ -712,10 +1026,11 @@ class AirlineAgent(Agent):
             "allowances": {k.title(): v for k, v in DUMMY_BAGGAGE.items()},
         }
 
-
     # ---------------- Flow: Policies & Contact Info ----------------
     @function_tool()
-    async def get_airline_info(self, field: Optional[str] = None, context: RunContext = None) -> dict:
+    async def get_airline_info(
+        self, field: Optional[str] = None, context: RunContext = None
+    ) -> dict:
         """
         Returns contact or policy information. If field provided, return that key.
         """
@@ -734,3 +1049,46 @@ class AirlineAgent(Agent):
             "Non-refundable fares cannot be refunded but may be rebooked for a change fee. "
             "Refundable fares are subject to processing fees. For exact terms check your fare conditions or provide your PNR."
         )
+
+
+def prewarm(proc: JobProcess):
+    proc.userdata["vad"] = silero.VAD.load()
+
+
+async def entrypoint(ctx: JobContext):
+    await ctx.connect()
+
+    session = AgentSession(
+        vad=silero.VAD.load(),
+        llm=openai.LLM(model="gpt-4.1"),
+        stt=openai.STT(
+            model="gpt-4o-transcribe",
+            language="en",
+            prompt="Always transcribe in English or Urdu",
+        ),
+        tts=openai.TTS(model="gpt-4o-mini-tts", voice="cedar"),
+    )
+
+    usage_collector = metrics.UsageCollector()
+
+    @session.on("metrics_collected")
+    def _on_metrics_collected(ev: MetricsCollectedEvent):
+        metrics.log_metrics(ev.metrics)
+        usage_collector.collect(ev.metrics)
+
+    async def log_usage():
+        summary = usage_collector.get_summary()
+        logger.info(f"Usage summary: {summary}")
+
+    ctx.add_shutdown_callback(log_usage)
+
+    await session.start(
+        agent=AirlineAgent(),
+        room=ctx.room,
+        room_input_options=RoomInputOptions(),
+        room_output_options=RoomOutputOptions(transcription_enabled=True),
+    )
+
+
+if __name__ == "__main__":
+    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm))
