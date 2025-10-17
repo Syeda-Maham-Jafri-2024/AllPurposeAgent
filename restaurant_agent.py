@@ -7,7 +7,7 @@ import random
 from datetime import datetime, date as dt_date, time as dt_time
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from pydantic import BaseModel, EmailStr,field_validator
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional, List, Dict
 from livekit.agents import (
     Agent,
@@ -101,23 +101,102 @@ RESTAURANT_INFO = {
     "hours": {"open": dt_time(10, 0), "close": dt_time(23, 0)},  # 10 AM – 11 PM
 }
 
+# MENU = {
+#     "Starters": {
+#         "Soups": {"Tomato Soup": 350, "Chicken Corn Soup": 400},
+#         "Salads": {"Caesar Salad": 550, "Greek Salad": 600},
+#         "Sides": {  # Added sides for upsell items
+#             "Fries": 300,
+#             "Garlic Bread": 400,
+#         },
+#     },
+#     "Main Course": {
+#         "Pasta": {"Fettuccine Alfredo": 950, "Spaghetti Bolognese": 1000},
+#         "Pizza": {"Margherita": 1200, "Pepperoni": 1400, "BBQ Chicken": 1500},
+#         "Burgers": {"Classic Burger": 800, "Cheese Burger": 900},
+#     },
+#     "Desserts": {"Chocolate Lava Cake": 650, "Cheesecake": 700},
+#     "Drinks": {"Coke": 150, "Lemonade": 200, "Iced Tea": 250},
+# }
+
 MENU = {
     "Starters": {
-        "Soups": {"Tomato Soup": 350, "Chicken Corn Soup": 400},
-        "Salads": {"Caesar Salad": 550, "Greek Salad": 600},
-        "Sides": {  # Added sides for upsell items
+        "Soups": {
+            "Tomato Soup": 350,
+            "Chicken Corn Soup": 400,
+            "Hot & Sour Soup": 420,
+            "Cream of Mushroom Soup": 450,
+        },
+        "Salads": {
+            "Caesar Salad": 550,
+            "Greek Salad": 600,
+            "Chicken Avocado Salad": 700,
+            "Tuna Salad": 650,
+        },
+        "Appetizers": {
+            "Mozzarella Sticks": 500,
+            "Crispy Chicken Wings": 600,
+            "Bruschetta": 450,
+            "Stuffed Mushrooms": 550,
+        },
+        "Sides": {
             "Fries": 300,
             "Garlic Bread": 400,
+            "Mashed Potatoes": 350,
+            "Coleslaw": 250,
         },
     },
     "Main Course": {
-        "Pasta": {"Fettuccine Alfredo": 950, "Spaghetti Bolognese": 1000},
-        "Pizza": {"Margherita": 1200, "Pepperoni": 1400, "BBQ Chicken": 1500},
-        "Burgers": {"Classic Burger": 800, "Cheese Burger": 900},
+        "Pasta": {
+            "Fettuccine Alfredo": 950,
+            "Spaghetti Bolognese": 1000,
+            "Penne Arrabbiata": 900,
+            "Lasagna": 1100,
+        },
+        "Pizza": {
+            "Margherita": 1200,
+            "Pepperoni": 1400,
+            "BBQ Chicken": 1500,
+            "Vegetarian Delight": 1300,
+            "Four Cheese Pizza": 1450,
+        },
+        "Burgers": {
+            "Classic Burger": 800,
+            "Cheese Burger": 900,
+            "BBQ Beef Burger": 950,
+            "Crispy Chicken Burger": 900,
+        },
+        "Steaks": {
+            "Grilled Chicken Steak": 1250,
+            "Peppercorn Beef Steak": 1600,
+            "Mushroom Sauce Steak": 1550,
+        },
+        "Continental": {
+            "Chicken Parmesan": 1200,
+            "Fish & Chips": 1100,
+            "Grilled Salmon": 1800,
+            "Chicken Stroganoff": 1250,
+        },
     },
-    "Desserts": {"Chocolate Lava Cake": 650, "Cheesecake": 700},
-    "Drinks": {"Coke": 150, "Lemonade": 200, "Iced Tea": 250},
+    "Desserts": {
+        "Chocolate Lava Cake": 650,
+        "Cheesecake": 700,
+        "Tiramisu": 750,
+        "Brownie with Ice Cream": 680,
+        "Apple Pie": 600,
+    },
+    "Drinks": {
+        "Coke": 150,
+        "Sprite": 150,
+        "Lemonade": 200,
+        "Iced Tea": 250,
+        "Cold Coffee": 350,
+        "Mint Margarita": 300,
+        "Fresh Lime Soda": 250,
+        "Bottled Water": 100,
+    },
 }
+
 
 # Upselling combos (all items now exist in MENU)
 UPSELL_MAP = {
@@ -133,10 +212,39 @@ RESERVATIONS: Dict[str, dict] = {}
 ORDERS: Dict[str, dict] = {}
 
 FILLER_AUDIO = [
-        "audio/filler_1.wav", "audio/filler_2.wav", "audio/filler_3.wav", "audio/filler_4.wav", "audio/filler_5.wav", "audio/filler_6.wav", "audio/filler_7.wav", "audio/filler_8.wav",
-        "audio/filler_9.wav","audio/filler_10.wav","audio/filler_11.wav","audio/filler_12.wav","audio/filler_13.wav","audio/filler_14.wav","audio/filler_15.wav","audio/filler_16.wav",
-        "audio/filler_17.wav","audio/filler_18.wav","audio/filler_19.wav","audio/filler_20.wav","audio/filler_21.wav","audio/filler_22.wav","audio/filler_23.wav","audio/filler_24.wav",
-        "audio/filler_25.wav","audio/filler_26.wav","audio/filler_27.wav","audio/filler_28.wav","audio/filler_29.wav","audio/filler_30.wav","audio/filler_31.wav","audio/filler_32.wav",]
+    "audio/filler_1.wav",
+    "audio/filler_2.wav",
+    "audio/filler_3.wav",
+    "audio/filler_4.wav",
+    "audio/filler_5.wav",
+    "audio/filler_6.wav",
+    "audio/filler_7.wav",
+    "audio/filler_8.wav",
+    "audio/filler_9.wav",
+    "audio/filler_10.wav",
+    "audio/filler_11.wav",
+    "audio/filler_12.wav",
+    "audio/filler_13.wav",
+    "audio/filler_14.wav",
+    "audio/filler_15.wav",
+    "audio/filler_16.wav",
+    "audio/filler_17.wav",
+    "audio/filler_18.wav",
+    "audio/filler_19.wav",
+    "audio/filler_20.wav",
+    "audio/filler_21.wav",
+    "audio/filler_22.wav",
+    "audio/filler_23.wav",
+    "audio/filler_24.wav",
+    "audio/filler_25.wav",
+    "audio/filler_26.wav",
+    "audio/filler_27.wav",
+    "audio/filler_28.wav",
+    "audio/filler_29.wav",
+    "audio/filler_30.wav",
+    "audio/filler_31.wav",
+    "audio/filler_32.wav",
+]
 
 CLOSING_RE = re.compile(
     r"^\s*(bye|goodbye|see you|see ya|later|thanks|thank you|that's it|done)[\.\!\?]?\s*$",
@@ -148,25 +256,56 @@ CLOSING_RE = re.compile(
 TABLE_AVAILABILITY = {
     2: {  # tables for 2 people
         "Table 1": {
-            "13:00": True, "14:00": False, "18:00": True, "19:00": False, "20:00": True, "21:00": False,},
+            "13:00": True,
+            "14:00": False,
+            "18:00": True,
+            "19:00": False,
+            "20:00": True,
+            "21:00": False,
+        },
         "Table 2": {
-           "13:00": True, "14:00": True,"18:00": False, "19:00": False, "20:00": False, "21:00": True,},
+            "13:00": True,
+            "14:00": True,
+            "18:00": False,
+            "19:00": False,
+            "20:00": False,
+            "21:00": True,
+        },
     },
     4: {  # tables for 4 people
         "Table 3": {
-            "13:00": True, "14:00": False, "18:00": True, "19:00": False, "20:00": True,},
+            "13:00": True,
+            "14:00": False,
+            "18:00": True,
+            "19:00": False,
+            "20:00": True,
+        },
         "Table 4": {
-            "13:00": True, "14:00": True, "18:00": False, "19:00": True, "20:00": False, },
+            "13:00": True,
+            "14:00": True,
+            "18:00": False,
+            "19:00": True,
+            "20:00": False,
+        },
     },
     6: {  # tables for 6 people
         "Table 5": {
-            "13:00": True, "14:00": True, "18:00": False, "19:00": True,}
+            "13:00": True,
+            "14:00": True,
+            "18:00": False,
+            "19:00": True,
+        }
     },
     10: {  # tables for 10 people
         "Table 6": {
-            "13:00": True,"14:00": False,"18:00": True, "20:00": False, }
+            "13:00": True,
+            "14:00": False,
+            "18:00": True,
+            "20:00": False,
+        }
     },
 }
+
 
 # ------------------ EMAIL UTILITY ------------------
 def send_email(to_email: str, subject: str, body: str):
@@ -188,6 +327,25 @@ def send_email(to_email: str, subject: str, body: str):
     except Exception as e:
         logger.error(f"❌ Failed to send email: {e}")
         return False
+
+
+# ----------------- Date Normalizer -------------------
+from datetime import datetime, timedelta, date
+
+
+def normalize_relative_date(input_date: date) -> date:
+    """Fix dates that are clearly misparsed (e.g., year 2023 instead of 2025) or meant as today/tomorrow."""
+    today = date.today()
+
+    # If date is in the past but less than a year old — likely misinterpreted "today/tomorrow"
+    if input_date < today:
+        # Replace year with current one
+        corrected = date(today.year, input_date.month, input_date.day)
+        if corrected < today:
+            corrected = date(today.year + 1, input_date.month, input_date.day)
+        return corrected
+
+    return input_date
 
 
 # ------------------ Pydantic Models ------------------
@@ -215,17 +373,19 @@ class ReservationRequest(BaseModel):
     def validate_date(cls, v):
         today = dt_date.today()
         # If date is in the past but less than 30 days old, assume typo and shift to next month/year
-        if v < today:
-            # If it's more than a year behind, it's likely a wrong parsing (e.g., 2023 instead of 2025)
-            if (today.year - v.year) >= 1:
-                corrected = dt_date(today.year, v.month, v.day)
-                if corrected < today:
-                    corrected = dt_date(today.year + 1, v.month, v.day)
-                v = corrected
-            else:
-                raise ValueError("Reservation date cannot be in the past.")
+        v = normalize_relative_date(v)
         return v
-   
+
+        # if v < today:
+        #     # If it's more than a year behind, it's likely a wrong parsing (e.g., 2023 instead of 2025)
+        #     if (today.year - v.year) >= 1:
+        #         corrected = dt_date(today.year, v.month, v.day)
+        #         if corrected < today:
+        #             corrected = dt_date(today.year + 1, v.month, v.day)
+        #         v = corrected
+        #     else:
+        #         raise ValueError("Reservation date cannot be in the past.")
+        # return v
 
     @field_validator("time")
     def validate_time(cls, v):
@@ -242,9 +402,11 @@ class ReservationRequest(BaseModel):
             )
         return v
 
+
 class OrderItem(BaseModel):
     item_name: str
     quantity: int
+
 
 class OrderRequest(BaseModel):
     name: str
@@ -257,7 +419,9 @@ class OrderRequest(BaseModel):
             raise ValueError("Name must contain only letters and spaces.")
         return v
 
+
 # ------------------ Helper Functions ----------------------------
+
 
 def find_available_table(people: int, requested_time: dt_time) -> dict:
     """Check if any table for the given group size is available at the requested time."""
@@ -303,7 +467,9 @@ class RestaurantAgent(Agent):
 
     # -------- Restaurant Info --------
     @function_tool()
-    async def get_restaurant_info(self, context: RunContext, field: Optional[str] = None):
+    async def get_restaurant_info(
+        self, context: RunContext, field: Optional[str] = None
+    ):
         """Retrieve restaurant info: 'name', 'address', 'phone', 'email', or 'hours'."""
         if field and field in RESTAURANT_INFO:
             value = RESTAURANT_INFO[field]
@@ -323,7 +489,6 @@ class RestaurantAgent(Agent):
         }
         return info
 
-
     # -------- Browse Menu --------
     @function_tool()
     async def browse_menu(self, context: RunContext) -> dict:
@@ -332,7 +497,9 @@ class RestaurantAgent(Agent):
 
     # -------- Make Reservation (Preview) --------
     @function_tool
-    async def make_reservation(self, context: RunContext, request: ReservationRequest) -> dict:
+    async def make_reservation(
+        self, context: RunContext, request: ReservationRequest
+    ) -> dict:
         """Handles reservation requests, checking table availability."""
         res_id = f"RES{random.randint(1000,9999)}"
         slot_key = f"{request.date}-{request.time.strftime('%H:%M')}"
@@ -383,33 +550,6 @@ class RestaurantAgent(Agent):
             "requires_confirmation": True,
         }
 
-    # @function_tool()
-    # async def make_reservation(self, context: RunContext, request: ReservationRequest) -> dict:
-    #     res_id = f"RES{random.randint(1000,9999)}"
-    #     slot_key = f"{request.date}-{request.time}"
-
-    #     if slot_key in [r["slot"] for r in RESERVATIONS.values() if r["status"] == "confirmed"]:
-    #         return {"error": f"❌ Slot {slot_key} already booked. Please choose another time."}
-
-    #     RESERVATIONS[res_id] = {
-    #         "id": res_id,
-    #         "slot": slot_key,
-    #         "name": request.name,
-    #         "email": request.email,
-    #         "people": request.people,
-    #         "status": "pending",
-    #     }
-
-    #     summary = (
-    #         f"Reservation Preview (ID: {res_id})\n"
-    #         f"Name: {request.name}\n"
-    #         f"People: {request.people}\n"
-    #         f"Date: {request.date} at {request.time}\n\n"
-    #         f"Please confirm to finalize."
-    #     )
-    #     context.session_data["pending_reservation"] = RESERVATIONS[res_id]
-    #     return {"reservation_id": res_id, "summary": summary, "requires_confirmation": True}
-
     # -------- Confirm Reservation --------
     @function_tool()
     async def confirm_reservation(self, context: RunContext) -> str:
@@ -421,12 +561,19 @@ class RestaurantAgent(Agent):
         RESERVATIONS[pending["id"]] = pending
         context.session_data.pop("pending_reservation", None)
 
+        table = pending.get("table", "N/A")
+
         msg = (
             f"✅ Reservation Confirmed!\n\n"
-            f"ID: {pending['id']}\n"
+            f"Reservation ID: {pending['id']}\n"
             f"Name: {pending['name']}\n"
-            f"People: {pending['people']}\n"
+            f"Number of People: {pending['people']}\n"
+            f"Table: {table}\n"
             f"Date & Time: {pending['slot']}"
+            f"📍 Location: {RESTAURANT_INFO['address']}\n"
+            f"📞 Contact: {RESTAURANT_INFO['phone']}\n"
+            f"📧 Email: {RESTAURANT_INFO['email']}\n\n"
+            f"We look forward to serving you at La Piazza Bistro!"
         )
 
         send_email(pending["email"], "Reservation Confirmed", msg)
@@ -443,6 +590,7 @@ class RestaurantAgent(Agent):
         order_id = f"ORD{random.randint(1000,9999)}"
         subtotal = 0
         upsell_suggestions = []
+        DELIVERY_CHARGE = 200  # flat delivery fee in Rs.
 
         # --- Helper function to check if an item exists anywhere in MENU
         def item_exists_in_menu(search_item: str) -> bool:
@@ -512,7 +660,9 @@ class RestaurantAgent(Agent):
                         )
 
         # --- Order summary
-        total = subtotal
+        # total = subtotal
+        total = subtotal + DELIVERY_CHARGE
+
         summary_lines = [
             f"🧾 Order Preview (ID: {order_id})",
             f"👤 Customer: {request.name} <{request.email}>",
@@ -524,6 +674,9 @@ class RestaurantAgent(Agent):
             summary_lines.append(f"  • {item.item_name} x{item.quantity}")
 
         summary_lines.append(f"\n💰 Subtotal: Rs. {subtotal}")
+        summary_lines.append(f"🚚 Delivery Charges: Rs. {DELIVERY_CHARGE}")
+        summary_lines.append(f"🧮 Total (incl. delivery): Rs. {total}")
+
         if upsell_suggestions:
             summary_lines.append(
                 f"💡 You might also like: {', '.join(set(upsell_suggestions))}"
@@ -548,10 +701,10 @@ class RestaurantAgent(Agent):
             "requires_confirmation": True,
         }
 
-
     # -------- Confirm Order --------
     @function_tool()
     async def confirm_order(self, context: RunContext) -> str:
+        DELIVERY_CHARGE = 200
         pending = context.session_data.get("pending_order")
         if not pending:
             return "❌ No pending order found."
@@ -560,12 +713,30 @@ class RestaurantAgent(Agent):
         ORDERS[pending["id"]] = pending
         context.session_data.pop("pending_order", None)
 
+        # msg = (
+        #     f"✅ Order Confirmed!\n\n"
+        #     f"ID: {pending['id']}\n"
+        #     f"Customer: {pending['name']} <{pending['email']}>\n"
+        #     f"Items: {pending['items']}\n"
+        #     f"Total: Rs. {pending['total']}"
+        # )
         msg = (
-            f"✅ Order Confirmed!\n\n"
-            f"ID: {pending['id']}\n"
-            f"Customer: {pending['name']} <{pending['email']}>\n"
-            f"Items: {pending['items']}\n"  
-            f"Total: Rs. {pending['total']}"
+            f"Dear {pending['name']},\n\n"
+            f"Your order has been successfully confirmed! 🎉\n\n"
+            f"🧾 **Order Details:**\n"
+            f"Order ID: {pending['id']}\n"
+            # f"Items: {pending['items']}\n"
+            f"Items Ordered:\n"
+            + "\n".join(
+                [f"  • {item} x{qty}" for item, qty in pending["items"].items()]
+            )
+            + "\n\n"
+            f"Delivery Charges: Rs. {DELIVERY_CHARGE}\n"
+            f"Total Amount: Rs. {pending['total']}\n\n"
+            f"Thank you for choosing La Piazza Bistro! 🍽️\n"
+            f"We’ll have your delicious meal delivered shortly.\n\n"
+            f"Warm regards,\n"
+            f"La Piazza Bistro Team"
         )
 
         # Send confirmation to both customer and restaurant
@@ -573,5 +744,3 @@ class RestaurantAgent(Agent):
         send_email(RESTAURANT_INFO["email"], "New Customer Order Received", msg)
 
         return msg
-   
-

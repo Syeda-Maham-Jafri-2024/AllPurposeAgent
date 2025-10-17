@@ -23,13 +23,15 @@ Sub Agent:
   - Get Hospital related details - email, phone, location, office hours
   - Get details related to doctors 
   - Get appointment status 
+  - Schedule an appointment
+  - Book lab test
 
 
  4. RESTUARANT AGENT:
   - Ask for restaurant contact details - email, phone, location, office hours
   - Browse through menu products
   - Make reservation for a table - receive confirmation email
-  - Place order for a food product - receive confirmation email
+  - Place order for a food product - get upsell suggestions -  receive confirmation email
 
 
  5. AI SYSTEMS AGENT:

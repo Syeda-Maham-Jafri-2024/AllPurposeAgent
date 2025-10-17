@@ -7,7 +7,7 @@ import json
 import asyncio
 from datetime import datetime, date as dt_date
 from typing import Optional, List, Dict
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, Field
 from livekit.agents import (
     Agent,
     RunContext,
@@ -115,13 +115,68 @@ CONTACT_INFO = {
 }
 
 # Dummy general policy info
+# POLICY_DETAILS = {
+#     "car insurance": "Covers damages to your vehicle and liability in case of accidents. Includes comprehensive and third-party coverage.",
+#     "travel insurance": "Provides coverage for trip cancellations, medical emergencies, lost luggage, and other travel-related issues.",
+#     "health insurance": "Covers medical expenses including hospitalization, surgery, and prescriptions.",
+#     "life insurance": "Provides financial protection to beneficiaries in the event of the policyholder's death.",
+#     "home insurance": "Covers damages to property caused by fire, theft, natural disasters, and other perils."
+# }
+
 POLICY_DETAILS = {
-    "car insurance": "Covers damages to your vehicle and liability in case of accidents. Includes comprehensive and third-party coverage.",
-    "travel insurance": "Provides coverage for trip cancellations, medical emergencies, lost luggage, and other travel-related issues.",
-    "health insurance": "Covers medical expenses including hospitalization, surgery, and prescriptions.",
-    "life insurance": "Provides financial protection to beneficiaries in the event of the policyholder's death.",
-    "home insurance": "Covers damages to property caused by fire, theft, natural disasters, and other perils."
+    "car insurance": (
+        "Car insurance provides financial protection against losses resulting from accidents, theft, or damage to your vehicle. "
+        "It typically includes:\n"
+        "• **Comprehensive Coverage:** Protects against theft, fire, vandalism, natural disasters, and non-collision-related damage.\n"
+        "• **Third-Party Liability:** Covers injury or property damage you cause to others.\n"
+        "• **Collision Coverage:** Pays for damages to your own vehicle due to a collision.\n"
+        "• **Personal Accident Cover:** Provides compensation for medical expenses or death benefits for the driver and passengers.\n"
+        "• **Optional Add-ons:** Such as zero depreciation, roadside assistance, engine protection, and more."
+    ),
+
+    "travel insurance": (
+        "Travel insurance protects you against unexpected events while traveling domestically or internationally. "
+        "Key benefits include:\n"
+        "• **Trip Cancellation or Interruption:** Reimbursement for non-refundable expenses if your trip is canceled or cut short.\n"
+        "• **Medical Emergencies Abroad:** Coverage for hospitalization, doctor visits, and medical evacuation.\n"
+        "• **Lost or Delayed Baggage:** Compensation for personal belongings that are lost, stolen, or delayed.\n"
+        "• **Flight Delays and Missed Connections:** Covers extra expenses due to delays or missed flights.\n"
+        "• **24/7 Assistance:** Access to travel and medical support services anywhere in the world."
+    ),
+
+    "health insurance": (
+        "Health insurance covers the cost of medical care and ensures access to quality healthcare without financial strain. "
+        "It generally includes:\n"
+        "• **Hospitalization Coverage:** Room charges, doctor fees, nursing, and surgery costs.\n"
+        "• **Outpatient Benefits:** Doctor consultations, diagnostic tests, and prescription medicines.\n"
+        "• **Maternity Benefits:** Coverage for childbirth and related medical expenses (in select plans).\n"
+        "• **Pre- and Post-Hospitalization:** Medical expenses before and after hospitalization.\n"
+        "• **Preventive Care:** Annual checkups and vaccinations in some plans.\n"
+        "• **Cashless Treatment:** Direct settlement at network hospitals without upfront payment."
+    ),
+
+    "life insurance": (
+        "Life insurance provides financial security to your loved ones in the event of your death. "
+        "It serves as a long-term investment and protection tool. Common types include:\n"
+        "• **Term Life Insurance:** Offers pure protection with a fixed payout to beneficiaries upon the policyholder’s death.\n"
+        "• **Whole Life Insurance:** Provides lifetime coverage and may include cash value accumulation.\n"
+        "• **Endowment Plans:** Combine life coverage with savings benefits payable at maturity.\n"
+        "• **Unit-Linked Insurance Plans (ULIPs):** Offer both investment opportunities and life coverage.\n"
+        "• **Riders:** Optional add-ons like critical illness, accidental death, or disability coverage."
+    ),
+
+    "home insurance": (
+        "Home insurance protects your home and its contents against a wide range of risks. "
+        "Typical coverage includes:\n"
+        "• **Structure Coverage:** Protects the physical structure (walls, roof, foundation) against fire, natural disasters, or vandalism.\n"
+        "• **Contents Coverage:** Covers household belongings such as furniture, electronics, and appliances.\n"
+        "• **Theft and Burglary Protection:** Compensation for loss of valuables due to theft or break-ins.\n"
+        "• **Natural Disaster Protection:** Includes coverage for floods, earthquakes, and storms.\n"
+        "• **Liability Coverage:** Protects you from legal liability if someone is injured on your property.\n"
+        "• **Additional Living Expenses:** Covers temporary housing costs if your home becomes uninhabitable after a covered event."
+    )
 }
+
 
 USERS = {
     "ali.raza@example.com": {
@@ -237,6 +292,12 @@ class PolicyRequest(BaseModel):
         if not v.startswith("POL") or len(v) < 6:
             raise ValueError("Invalid policy number.")
         return v
+
+class LatePaymentRequest(BaseModel):
+    """Information required to calculate late payment penalty."""
+    premium_amount: float = Field(..., description="Premium amount in rupees.")
+    due_date: str = Field(..., description="The due date in YYYY-MM-DD format.")
+    paid_date: Optional[str] = Field(None, description="The date when payment was made (YYYY-MM-DD). If not provided, assumes today.")
 
 # -------------------- Helper utilities --------------------
 def send_email(to_email: str, subject: str, body: str) -> bool:
@@ -505,6 +566,32 @@ class InsuranceAgent(Agent):
                     f"Description: {claim['description']}"
                 )
         return "\n\n".join(results) if results else "No matching claims found."
+    
+    from datetime import datetime
+
+    @function_tool()
+    async def calculate_late_payment_penalty(self, context: RunContext, request: LatePaymentRequest) -> str:
+        """
+        Calculates late payment penalty if the premium is overdue.
+        Penalty = 1% of premium per week after due date.
+        """
+        due = datetime.strptime(request.due_date, "%Y-%m-%d")
+        paid = datetime.strptime(request.paid_date, "%Y-%m-%d") if request.paid_date else datetime.now()
+
+        if paid <= due:
+            return f"No penalty. Payment is on time ✅"
+
+        days_late = (paid - due).days
+        weeks_late = days_late // 7 or 1  # round up to 1 week minimum
+        penalty = round(request.premium_amount * 0.01 * weeks_late, 2)
+
+        total_due = request.premium_amount + penalty
+
+        return (
+            f"📅 Payment was {days_late} days late.\n"
+            f"💸 Penalty (1% per week): Rs. {penalty}\n"
+            f"Total Amount Due (with penalty): Rs. {total_due}"
+        )
 
 
 

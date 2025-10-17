@@ -1,10 +1,10 @@
-
 import os
+import random
 import smtplib
 import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import date as dt_date, datetime
 import dateparser
 import re
@@ -33,16 +33,46 @@ logger = logging.getLogger("hospital-voice-agent")
 # logging.basicConfig(level=logging.INFO)
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 LOG_FILE = "healthcare_session_summary.json"
 
 # ------------------ SAMPLE DATA ------------------
 FILLER_AUDIO = [
-        "audio/filler_1.wav", "audio/filler_2.wav", "audio/filler_3.wav", "audio/filler_4.wav", "audio/filler_5.wav", "audio/filler_6.wav", "audio/filler_7.wav", "audio/filler_8.wav",
-        "audio/filler_9.wav","audio/filler_10.wav","audio/filler_11.wav","audio/filler_12.wav","audio/filler_13.wav","audio/filler_14.wav","audio/filler_15.wav","audio/filler_16.wav",
-        "audio/filler_17.wav","audio/filler_18.wav","audio/filler_19.wav","audio/filler_20.wav","audio/filler_21.wav","audio/filler_22.wav","audio/filler_23.wav","audio/filler_24.wav",
-        "audio/filler_25.wav","audio/filler_26.wav","audio/filler_27.wav","audio/filler_28.wav","audio/filler_29.wav","audio/filler_30.wav","audio/filler_31.wav","audio/filler_32.wav",]
+    "audio/filler_1.wav",
+    "audio/filler_2.wav",
+    "audio/filler_3.wav",
+    "audio/filler_4.wav",
+    "audio/filler_5.wav",
+    "audio/filler_6.wav",
+    "audio/filler_7.wav",
+    "audio/filler_8.wav",
+    "audio/filler_9.wav",
+    "audio/filler_10.wav",
+    "audio/filler_11.wav",
+    "audio/filler_12.wav",
+    "audio/filler_13.wav",
+    "audio/filler_14.wav",
+    "audio/filler_15.wav",
+    "audio/filler_16.wav",
+    "audio/filler_17.wav",
+    "audio/filler_18.wav",
+    "audio/filler_19.wav",
+    "audio/filler_20.wav",
+    "audio/filler_21.wav",
+    "audio/filler_22.wav",
+    "audio/filler_23.wav",
+    "audio/filler_24.wav",
+    "audio/filler_25.wav",
+    "audio/filler_26.wav",
+    "audio/filler_27.wav",
+    "audio/filler_28.wav",
+    "audio/filler_29.wav",
+    "audio/filler_30.wav",
+    "audio/filler_31.wav",
+    "audio/filler_32.wav",
+]
 
 
 CLOSING_RE = re.compile(
@@ -59,16 +89,56 @@ HOSPITAL_INFO = {
 }
 
 DOCTORS = {
-    "Dr. Sara Khan": { "specialization": "Cardiologist","timings": "Mon–Fri: 10 AM – 2 PM","email": "sara.khan@citycarehospital.com",},
-    "Dr. Ali Raza": { "specialization": "Dermatologist", "timings": "Tue–Sat: 3 PM – 7 PM","email": "ali.raza@citycarehospital.com",},
-    "Dr. Fatima Ahmed": {"specialization": "Pediatrician", "timings": "Mon–Thu: 9 AM – 1 PM", "email": "fatima.ahmed@citycarehospital.com",},
-    "Dr. Kamran Siddiqui": { "specialization": "Orthopedic Surgeon", "timings": "Mon–Fri: 11 AM – 4 PM", "email": "kamran.siddiqui@citycarehospital.com",},
-    "Dr. Nadia Hussain": { "specialization": "Gynecologist", "timings": "Tue–Sat: 9 AM – 12 PM", "email": "nadia.hussain@citycarehospital.com",},
-    "Dr. Imran Qureshi": { "specialization": "Neurologist", "timings": "Mon–Wed: 2 PM – 6 PM", "email": "imran.qureshi@citycarehospital.com",},
-    "Dr. Ayesha Malik": { "specialization": "Psychiatrist", "timings": "Thu–Sat: 10 AM – 1 PM","email": "ayesha.malik@citycarehospital.com",},
-    "Dr. Bilal Sheikh": { "specialization": "ENT Specialist", "timings": "Mon–Fri: 4 PM – 8 PM", "email": "bilal.sheikh@citycarehospital.com",},
-    "Dr. Zainab Akhtar": {"specialization": "Ophthalmologist","timings": "Tue–Fri: 9 AM – 1 PM","email": "zainab.akhtar@citycarehospital.com",},
-    "Dr. Hassan Javed": { "specialization": "General Physician", "timings": "Mon–Sat: 9 AM – 5 PM", "email": "hassan.javed@citycarehospital.com", },
+    "Dr. Sara Khan": {
+        "specialization": "Cardiologist",
+        "timings": "Mon–Fri: 10 AM – 2 PM",
+        "email": "sara.khan@citycarehospital.com",
+    },
+    "Dr. Ali Raza": {
+        "specialization": "Dermatologist",
+        "timings": "Tue–Sat: 3 PM – 7 PM",
+        "email": "ali.raza@citycarehospital.com",
+    },
+    "Dr. Fatima Ahmed": {
+        "specialization": "Pediatrician",
+        "timings": "Mon–Thu: 9 AM – 1 PM",
+        "email": "fatima.ahmed@citycarehospital.com",
+    },
+    "Dr. Kamran Siddiqui": {
+        "specialization": "Orthopedic Surgeon",
+        "timings": "Mon–Fri: 11 AM – 4 PM",
+        "email": "kamran.siddiqui@citycarehospital.com",
+    },
+    "Dr. Nadia Hussain": {
+        "specialization": "Gynecologist",
+        "timings": "Tue–Sat: 9 AM – 12 PM",
+        "email": "nadia.hussain@citycarehospital.com",
+    },
+    "Dr. Imran Qureshi": {
+        "specialization": "Neurologist",
+        "timings": "Mon–Wed: 2 PM – 6 PM",
+        "email": "imran.qureshi@citycarehospital.com",
+    },
+    "Dr. Ayesha Malik": {
+        "specialization": "Psychiatrist",
+        "timings": "Thu–Sat: 10 AM – 1 PM",
+        "email": "ayesha.malik@citycarehospital.com",
+    },
+    "Dr. Bilal Sheikh": {
+        "specialization": "ENT Specialist",
+        "timings": "Mon–Fri: 4 PM – 8 PM",
+        "email": "bilal.sheikh@citycarehospital.com",
+    },
+    "Dr. Zainab Akhtar": {
+        "specialization": "Ophthalmologist",
+        "timings": "Tue–Fri: 9 AM – 1 PM",
+        "email": "zainab.akhtar@citycarehospital.com",
+    },
+    "Dr. Hassan Javed": {
+        "specialization": "General Physician",
+        "timings": "Mon–Sat: 9 AM – 5 PM",
+        "email": "hassan.javed@citycarehospital.com",
+    },
 }
 
 from datetime import date
@@ -79,41 +149,111 @@ APPOINTMENTS = {
         "email": "ali.khan@example.com",
         "doctor": "Dr. Sara Khan",
         "date": str(date.today()),
-        "time": "10:30 AM"
+        "time": "10:30 AM",
     },
     "APT002": {
         "patient": "Sara Ahmed",
         "email": "sara.ahmed@example.com",
         "doctor": "Dr. Ali Raza",
         "date": str(date.today()),
-        "time": "3:45 PM"
+        "time": "3:45 PM",
     },
 }
 
 # Dummy reports data
 REPORTS = {
     "RPT001": {
-        "patient_name": "Ali Khan", "test_name": "Blood Test", "status": "Completed", "date": "2025-10-04", "remarks": "Normal blood count levels.", },
+        "patient_name": "Ali Khan",
+        "test_name": "Blood Test",
+        "status": "Completed",
+        "date": "2025-10-04",
+        "remarks": "Normal blood count levels.",
+    },
     "RPT002": {
-        "patient_name": "Sara Ahmed", "test_name": "X-Ray (Chest)", "status": "In Progress", "date": "2025-10-06", "remarks": "Awaiting radiologist review.",},
+        "patient_name": "Sara Ahmed",
+        "test_name": "X-Ray (Chest)",
+        "status": "In Progress",
+        "date": "2025-10-06",
+        "remarks": "Awaiting radiologist review.",
+    },
     "RPT003": {
-        "patient_name": "Bilal Hussain", "test_name": "MRI (Brain)", "status": "Pending", "date": "2025-10-07", "remarks": "Test scheduled tomorrow.", },
+        "patient_name": "Bilal Hussain",
+        "test_name": "MRI (Brain)",
+        "status": "Pending",
+        "date": "2025-10-07",
+        "remarks": "Test scheduled tomorrow.",
+    },
     "RPT004": {
-        "patient_name": "Fatima Noor", "test_name": "Urine Analysis", "status": "Completed", "date": "2025-10-03", "remarks": "No signs of infection detected.", },
+        "patient_name": "Fatima Noor",
+        "test_name": "Urine Analysis",
+        "status": "Completed",
+        "date": "2025-10-03",
+        "remarks": "No signs of infection detected.",
+    },
     "RPT005": {
-        "patient_name": "Hassan Raza", "test_name": "ECG", "status": "Completed", "date": "2025-10-02", "remarks": "Minor irregularities, follow-up recommended.",},
+        "patient_name": "Hassan Raza",
+        "test_name": "ECG",
+        "status": "Completed",
+        "date": "2025-10-02",
+        "remarks": "Minor irregularities, follow-up recommended.",
+    },
     "RPT006": {
-        "patient_name": "Ayesha Siddiqui", "test_name": "Thyroid Function Test", "status": "In Progress", "date": "2025-10-05", "remarks": "Lab processing underway.",},
+        "patient_name": "Ayesha Siddiqui",
+        "test_name": "Thyroid Function Test",
+        "status": "In Progress",
+        "date": "2025-10-05",
+        "remarks": "Lab processing underway.",
+    },
     "RPT007": {
-        "patient_name": "Imran Sheikh", "test_name": "COVID-19 PCR", "status": "Completed","date": "2025-10-01", "remarks": "Negative result.", },
+        "patient_name": "Imran Sheikh",
+        "test_name": "COVID-19 PCR",
+        "status": "Completed",
+        "date": "2025-10-01",
+        "remarks": "Negative result.",
+    },
     "RPT008": {
-        "patient_name": "Zara Malik", "test_name": "Ultrasound (Abdomen)", "status": "Pending", "date": "2025-10-08", "remarks": "Test scheduled for today at 3 PM.",},
+        "patient_name": "Zara Malik",
+        "test_name": "Ultrasound (Abdomen)",
+        "status": "Pending",
+        "date": "2025-10-08",
+        "remarks": "Test scheduled for today at 3 PM.",
+    },
     "RPT009": {
-        "patient_name": "Usman Tariq", "test_name": "Liver Function Test", "status": "Completed", "date": "2025-09-30", "remarks": "Slightly elevated enzyme levels, doctor review advised.",},
+        "patient_name": "Usman Tariq",
+        "test_name": "Liver Function Test",
+        "status": "Completed",
+        "date": "2025-09-30",
+        "remarks": "Slightly elevated enzyme levels, doctor review advised.",
+    },
     "RPT010": {
-        "patient_name": "Maryam Shah", "test_name": "CT Scan (Abdomen)","status": "In Progress", "date": "2025-10-06", "remarks": "Scans uploaded, awaiting radiologist’s summary.",},
+        "patient_name": "Maryam Shah",
+        "test_name": "CT Scan (Abdomen)",
+        "status": "In Progress",
+        "date": "2025-10-06",
+        "remarks": "Scans uploaded, awaiting radiologist’s summary.",
+    },
 }
 
+TEST_COSTS = {
+    "blood test": 1500,
+    "lipid profile": 2500,
+    "thyroid test": 3000,
+    "covid-19 pcr": 4000,
+    "vitamin d": 3500,
+    "cbc": 1200,
+    "liver function test": 2800,
+}
+
+# Preparation guidelines for common tests
+TEST_PREPARATION_GUIDELINES = {
+    "blood test": "Please fast for at least 8 hours before the test. You may drink water.",
+    "lipid profile": "Do not eat or drink (except water) for 8–12 hours before the test.",
+    "thyroid test": "Avoid taking thyroid medication before the test unless advised by your doctor.",
+    "covid-19 pcr": "Do not eat, drink, or brush your teeth 30 minutes before sample collection.",
+    "vitamin d": "No fasting required. Maintain normal diet.",
+    "cbc": "No fasting required. Stay hydrated for better blood flow.",
+    "liver function test": "Avoid alcohol and fatty foods 24 hours before the test.",
+}
 
 
 # ------------------ EMAIL UTILITY ------------------
@@ -137,7 +277,31 @@ def send_email_to_patient(to_email: str, subject: str, body: str):
         logger.error(f"❌ Failed to send email: {e}")
         return False
 
+
 # ------------------ Pydantic Model ------------------
+class LabTestRequest(BaseModel):
+    patient_name: str = Field(..., description="Full name of the patient")
+    test_type: str = Field(
+        ...,
+        description="Type of lab test (e.g., blood test, lipid profile, thyroid test)",
+    )
+    preferred_date: str = Field(
+        ..., description="Preferred date for the test in YYYY-MM-DD format"
+    )
+    preferred_time: str = Field(
+        ..., description="Preferred time for the test (e.g., 09:00 AM)"
+    )
+    home_sample_collection: bool = Field(
+        default=False, description="Whether the user wants home sample collection"
+    )
+    lab_location: Optional[str] = Field(
+        default="Downtown Branch",
+        description="Preferred lab branch (Downtown or Clifton)",
+    )
+    contact_number: str = Field(..., description="Contact number for confirmation")
+    email: Optional[str] = None  # <-- added email field
+
+
 class AppointmentRequest(BaseModel):
     name: str
     email: EmailStr
@@ -158,12 +322,15 @@ class AppointmentRequest(BaseModel):
             raise ValueError("Appointment date cannot be in the past.")
         return value
 
+
 class ReportQuery(BaseModel):
     report_id: str
     patient_name: Optional[str] = None
 
+
 class CancelRequest(BaseModel):
     """Model for cancelling an appointment"""
+
     appointment_id: str
 
     @field_validator("appointment_id")
@@ -174,11 +341,15 @@ class CancelRequest(BaseModel):
             raise ValueError(f"Appointment ID '{v}' not found.")
         return v
 
+
 # ----------------- Helper Functions ---------------
 
 import calendar
 
-def is_doctor_available(doctor_name: str, appointment_date: dt_date, appointment_time_str: str) -> tuple[bool, str]:
+
+def is_doctor_available(
+    doctor_name: str, appointment_date: dt_date, appointment_time_str: str
+) -> tuple[bool, str]:
     """
     Checks if the doctor is available on the requested day and time.
     Returns (True, message) if valid, else (False, reason).
@@ -188,7 +359,10 @@ def is_doctor_available(doctor_name: str, appointment_date: dt_date, appointment
         return False, f"Doctor '{doctor_name}' not found."
 
     timing_str = doc_info["timings"]  # e.g., "Mon–Fri: 10 AM – 2 PM"
-    match = re.match(r"([A-Za-z]{3})[–-]([A-Za-z]{3}):\s*(\d{1,2}\s*[AP]M)\s*[–-]\s*(\d{1,2}\s*[AP]M)", timing_str)
+    match = re.match(
+        r"([A-Za-z]{3})[–-]([A-Za-z]{3}):\s*(\d{1,2}\s*[AP]M)\s*[–-]\s*(\d{1,2}\s*[AP]M)",
+        timing_str,
+    )
     if not match:
         return False, f"Could not parse timings for {doctor_name}."
 
@@ -215,12 +389,16 @@ def is_doctor_available(doctor_name: str, appointment_date: dt_date, appointment
     requested_time = dateparser.parse(appointment_time_str).time()
 
     if not (start_time <= requested_time <= end_time):
-        return False, f"{doctor_name} is available only between {start_time_str} and {end_time_str}."
+        return (
+            False,
+            f"{doctor_name} is available only between {start_time_str} and {end_time_str}.",
+        )
 
     return True, f"{doctor_name} is available at {appointment_time_str} on that day."
 
 
 # ------------------ HOSPITAL AGENT ------------------
+
 
 class HospitalAgent(Agent):
     def __init__(self, voice: str = "alloy") -> None:
@@ -263,8 +441,7 @@ class HospitalAgent(Agent):
 
         # Find all matching doctors (case-insensitive partial match)
         matches = [
-            name for name in DOCTORS.keys()
-            if doctor_name.lower() in name.lower()
+            name for name in DOCTORS.keys() if doctor_name.lower() in name.lower()
         ]
 
         if not matches:
@@ -285,10 +462,11 @@ class HospitalAgent(Agent):
             "Please specify the full name."
         )
 
-
     # -------- Get Appointment Status --------
     @function_tool()
-    async def get_appointment_status(self, appointment_id: str, context: RunContext) -> str:
+    async def get_appointment_status(
+        self, appointment_id: str, context: RunContext
+    ) -> str:
         logger.info(f"📌 Checking status for appointment {appointment_id}")
 
         appointment = APPOINTMENTS.get(appointment_id)
@@ -307,14 +485,19 @@ class HospitalAgent(Agent):
             f"Contact: {HOSPITAL_INFO['phone']}"
         )
 
-
     # -------- Schedule Appointment (with Pydantic) --------
     @function_tool()
-    async def schedule_appointment(self, request: AppointmentRequest, context: RunContext) -> str:
-        logger.info(f"📝 Scheduling validated appointment for {request.name} with {request.doctor_name} on {request.date}")
+    async def schedule_appointment(
+        self, request: AppointmentRequest, context: RunContext
+    ) -> str:
+        logger.info(
+            f"📝 Scheduling validated appointment for {request.name} with {request.doctor_name} on {request.date}"
+        )
 
         # --- Check doctor's availability ---
-        available, msg = is_doctor_available(request.doctor_name, request.date, request.time)
+        available, msg = is_doctor_available(
+            request.doctor_name, request.date, request.time
+        )
         if not available:
             logger.warning(f"❌ Appointment rejected: {msg}")
             return f"❌ Sorry, {msg} Please choose another time within their working hours."
@@ -349,58 +532,11 @@ class HospitalAgent(Agent):
 
         return confirmation_msg
 
-    @function_tool
-    def check_report_status(query: ReportQuery) -> str:
-        """Check the status of a patient's medical report using their report ID."""
-        report = REPORTS.get(query.report_id)
-        if not report:
-            return f"Sorry, I couldn’t find any report with ID {query.report_id}. Please make sure it’s correct."
-        
-        return (
-            f"Report ID: {query.report_id}\n"
-            f"Patient Name: {report['patient_name']}\n"
-            f"Test Name: {report['test_name']}\n"
-            f"Status: {report['status']}\n"
-            f"Date: {report['date']}\n"
-            f"Remarks: {report['remarks']}"
-    )
-
-    # async def schedule_appointment(self, request: AppointmentRequest, context: RunContext) -> str:
-    #     logger.info(f"📝 Scheduling validated appointment for {request.name} with {request.doctor_name} on {request.date}")
-
-    #     appointment_id = f"APT{len(APPOINTMENTS)+1:03d}"
-    #     APPOINTMENTS[appointment_id] = {
-    #         "patient": request.name,
-    #         "email": request.email,
-    #         "doctor": request.doctor_name,
-    #         "date": str(request.date),
-    #         "time": request.time,
-    #     }
-
-    #     confirmation_msg = (
-    #         f"✅ Appointment confirmed!\n\n"
-    #         f"ID: {appointment_id}\n"
-    #         f"Patient: {request.name}\n"
-    #         f"Doctor: {request.doctor_name}\n"
-    #         f"Date: {request.date}\n\n"
-    #         f"Location: {HOSPITAL_INFO['address']}\n"
-    #         f"Contact: {HOSPITAL_INFO['phone']}"
-    #     )
-
-    #     email_body = (
-    #         f"Dear {request.name},\n\n"
-    #         f"Your appointment has been scheduled.\n\n"
-    #         f"{confirmation_msg}\n\n"
-    #         f"- CityCare Hospital"
-    #     )
-    #     send_email_to_patient(request.email, "Appointment Confirmation", email_body)
-
-    #     return confirmation_msg
-
-
     # -------- Cancel Appointment --------
     @function_tool()
-    async def cancel_appointment(self, request: CancelRequest, context: RunContext) -> str:
+    async def cancel_appointment(
+        self, request: CancelRequest, context: RunContext
+    ) -> str:
         logger.info(f"❌ Cancelling appointment {request.appointment_id}")
 
         appointment = APPOINTMENTS.pop(request.appointment_id, None)
@@ -420,4 +556,77 @@ class HospitalAgent(Agent):
         send_email_to_patient(appointment["email"], "Appointment Cancelled", email_body)
 
         return msg
-    
+
+    # ------------- Check Report Status --------------------------------
+    @function_tool
+    def check_report_status(query: ReportQuery) -> str:
+        """Check the status of a patient's medical report using their report ID."""
+        report = REPORTS.get(query.report_id)
+        if not report:
+            return f"Sorry, I couldn’t find any report with ID {query.report_id}. Please make sure it’s correct."
+
+        return (
+            f"Report ID: {query.report_id}\n"
+            f"Patient Name: {report['patient_name']}\n"
+            f"Test Name: {report['test_name']}\n"
+            f"Status: {report['status']}\n"
+            f"Date: {report['date']}\n"
+            f"Remarks: {report['remarks']}"
+        )
+
+    # ------------ Book Lab  Test ----------------------
+    @function_tool()
+    async def book_lab_test(self, context: RunContext, request: LabTestRequest) -> str:
+        """
+        Books a lab test appointment for a patient.
+        Sends an email confirmation after successful booking.
+        """
+
+        test_type = request.test_type.lower()
+        test_cost = TEST_COSTS.get(test_type, 2000)
+        preparation_guide = TEST_PREPARATION_GUIDELINES.get(
+            test_type, "No special preparation is required for this test."
+        )
+
+        convenience_fee = 500 if request.home_sample_collection else 0
+        total_cost = test_cost + convenience_fee
+        booking_id = f"LAB{random.randint(1000, 9999)}"
+        location = request.lab_location.title()
+
+        response = (
+            f"✅ **Lab Test Booking Confirmed!**\n\n"
+            f"🧾 **Booking ID:** {booking_id}\n"
+            f"👤 **Patient:** {request.patient_name}\n"
+            f"🧪 **Test:** {request.test_type.title()}\n"
+            f"📅 **Date:** {request.preferred_date}\n"
+            f"⏰ **Time:** {request.preferred_time}\n"
+            f"📍 **Lab Location:** {location}\n"
+            f"🏠 **Home Collection:** {'Yes' if request.home_sample_collection else 'No'}\n"
+            f"💰 **Test Cost:** Rs. {test_cost}\n"
+            f"{'🚗 Home Collection Fee: Rs. 500\n' if request.home_sample_collection else ''}"
+            f"💳 **Total Payable:** Rs. {total_cost}\n"
+            f"📞 Confirmation message will be sent to {request.contact_number}.\n\n"
+            f"🧾 **Preparation Instructions:**\n{preparation_guide}"
+        )
+
+        # 📨 Send email confirmation
+        if request.email:
+            email_subject = f"Lab Test Booking Confirmation - {booking_id}"
+            email_body = (
+                f"Dear {request.patient_name},\n\n"
+                f"Your lab test has been successfully booked.\n\n"
+                f"Test: {request.test_type.title()}\n"
+                f"Date: {request.preferred_date}\n"
+                f"Time: {request.preferred_time}\n"
+                f"Location: {location}\n"
+                f"Total Amount: Rs. {total_cost}\n\n"
+                f"Preparation Instructions: {preparation_guide}\n\n"
+                f"Thank you for choosing CityCare Hospital.\n"
+                f"Stay healthy!\n\n"
+                f"— CityCare Hospital Team"
+            )
+            await send_email_to_patient(
+                self, context, request.email, email_subject, email_body
+            )
+
+        return response
